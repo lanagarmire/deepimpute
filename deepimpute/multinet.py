@@ -112,8 +112,9 @@ class MultiNet(object):
             self.NN_params["dims"][1] = df.shape[1]
 
         # Choose genes to impute
+        genes_sort = df.quantile(.99).sort_values(ascending=False)
+
         if NN_genes is None:
-            genes_sort = df.quantile(.99).sort_values(ascending=False)
             NN_genes = get_target_genes(genes_sort, NN_lim=NN_lim)
 
         df_to_impute = df[NN_genes]
