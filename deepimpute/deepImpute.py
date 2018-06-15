@@ -8,14 +8,14 @@ def deepImpute(
     n_cores=10,
     cell_subset=None,
     imputed_only=False,
+    restore_pos_values=True,
     seed=0,
     **NN_params
 ):
 
     multi = MultiNet(n_cores=n_cores, seed=seed, **NN_params)
     multi.fit(data, NN_lim=NN_lim, cell_subset=cell_subset)
-    return multi.predict(data, imputed_only=imputed_only)
-
+    return multi.predict(data, imputed_only=imputed_only,restore_pos_values=restore_pos_values)
 
 if __name__ == "__main__":
     import argparse

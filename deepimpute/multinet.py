@@ -100,7 +100,7 @@ class MultiNet(object):
         self.NN_params["n_cores"] = max(1, int(self.maxcores / n_cores))
         return n_runs, n_cores
 
-    def fit(self, data, NN_lim="auto", cell_subset=None):
+    def fit(self, data, NN_lim="auto", cell_subset=None, NN_genes=None):
         np.random.seed(seed=self.seed)
 
         df = pd.DataFrame(data)
@@ -112,8 +112,9 @@ class MultiNet(object):
             self.NN_params["dims"][1] = df.shape[1]
 
         # Choose genes to impute
-        genes_sort = df.quantile(.99).sort_values(ascending=False)
-        NN_genes = get_target_genes(genes_sort, NN_lim=NN_lim)
+        if NN_genes is None:
+            genes_sort = df.quantile(.99).sort_values(ascending=False)
+            NN_genes = get_target_genes(genes_sort, NN_lim=NN_lim)
 
         df_to_impute = df[NN_genes]
 
