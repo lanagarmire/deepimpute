@@ -20,12 +20,13 @@ def newCoreInitializer(arr_to_populate):
     sharedArray = arr_to_populate
 
 
-def trainNet(in_out, NN_param_i, data_i, labels):
+def trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=False):
     features, targets = in_out
 
     net = Net(**NN_param_i)
-    net.fit(data_i, targetGenes=targets, predictorGenes=features, labels=labels)
+    net.fit(data_i, targetGenes=targets, predictorGenes=features, labels=labels, retrieve_training=retrieve_training)
 
+    print(net.NNid)
     # retrieve the array
     params = list(NN_param_i.keys()) + ["targetGenes", "NNid", "predictorGenes"]
     args2return = [(attr, getattr(net, attr)) for attr in params]
@@ -39,16 +40,17 @@ def predictNet(data_i, NN_param_i, labels):
     )
     return net.predict(data_i_ok)
 
-
 def trainOrPredict(args):
-    in_out, NN_param_i, labels, mode = args
+    if len(args) == 5:
+        in_out, NN_param_i, labels, mode, retrieve_training = args
+    else:
+        in_out, NN_param_i, labels, mode = args
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         data_i = np.ctypeslib.as_array(sharedArray)
     if mode == "predict":
         return predictNet(data_i, NN_param_i, labels)
-    return trainNet(in_out, NN_param_i, data_i, labels)
-
+    return trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=retrieve_training)
 
 class MultiNet(object):
 
@@ -63,16 +65,17 @@ class MultiNet(object):
     ):
         self._maxcores = n_cores
         self.predictorLimit = predictorLimit
+        self.inOutGenes = None
         self.norm = Normalizer.fromName(preproc)
         self.runDir = runDir
         self.seed = seed
+
+        NN_params["seed"] = seed
+        if "dims" not in NN_params.keys():
+            NN_params["dims"] = [20, 500]
         self.NN_params = NN_params
-        self.seed = seed
-        self.NN_params["seed"] = seed
-
-        if "dims" not in self.NN_params.keys():
-            self.NN_params["dims"] = [20, 500]
-
+        self.trainingParams = None
+        
     @property
     def maxcores(self):
         if self._maxcores == "all":
@@ -100,7 +103,7 @@ class MultiNet(object):
         self.NN_params["n_cores"] = max(1, int(self.maxcores / n_cores))
         return n_runs, n_cores
 
-    def fit(self, data, NN_lim="auto", cell_subset=None, NN_genes=None):
+    def fit(self, data, NN_lim="auto", cell_subset=None, NN_genes=None, retrieve_training=False):
         np.random.seed(seed=self.seed)
 
         df = pd.DataFrame(data)
@@ -126,7 +129,6 @@ class MultiNet(object):
         predictors = np.intersect1d(
             genes_sort.index[genes_sort > self.predictorLimit], NN_genes
         )
-        print("Using {} genes as potential predictors".format(len(predictors)))
 
         n_choose = int(len(NN_genes) / self.NN_params["dims"][1])
 
@@ -146,13 +148,15 @@ class MultiNet(object):
             ]
         )
 
-        in_out_genes = get_input_genes(
-            df_to_impute,
-            self.NN_params["dims"],
-            distanceMatrix=corrMatrix,
-            targets=subGenelists,
-            predictorLimit=self.predictorLimit,
-        )
+        if self.inOutGenes is None:
+
+            self.inOutGenes = get_input_genes(
+                df_to_impute,
+                self.NN_params["dims"],
+                distanceMatrix=corrMatrix,
+                targets=subGenelists,
+                predictorLimit=self.predictorLimit,
+            )
 
         # ------------------------# Subsets for fitting #------------------------#
 
@@ -175,6 +179,9 @@ class MultiNet(object):
             )
         )
 
+        if self.trainingParams is None:
+            self.trainingParams = [self.NN_params]*len(self.inOutGenes)
+
         # -------------------# Preprocessing (if any) #--------------------#
 
         df_to_impute = self.norm.fit(df_to_impute).transform(df_to_impute)
@@ -187,13 +194,14 @@ class MultiNet(object):
 
         """ Parallelize process with shared array """
         childJobs = [
-            (in_out, self.NN_params, (idx, cols), "train") for in_out in in_out_genes
+            (in_out, trainingParams, (idx, cols), "train", retrieve_training)
+            for in_out,trainingParams in zip(self.inOutGenes,self.trainingParams)
         ]
 
-        output_dicts = self.runOnMultipleCores(n_cores, trainData.flatten(), childJobs)
+        self.trainingParams = self.runOnMultipleCores(n_cores, trainData.flatten(), childJobs)
 
         self.networks = []
-        for dictionnary in output_dicts:
+        for dictionnary in self.trainingParams:
             self.networks.append(Net(**dictionnary))
 
         return self
@@ -204,6 +212,7 @@ class MultiNet(object):
         pool = Pool(
             processes=cores, initializer=newCoreInitializer, initargs=(sharedArray,)
         )
+        
         output_dicts = pool.map(trainOrPredict, childJobs)
         pool.close()
         pool.join()

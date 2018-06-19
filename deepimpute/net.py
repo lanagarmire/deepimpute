@@ -93,6 +93,10 @@ class Net(object):
 
         if self.NNid == "auto":
             rand = binascii.b2a_hex(os.urandom(3))
+
+            if type(rand) is bytes:
+                rand = rand.decode()
+            
             self.NNid = "lr={}_bs={}_dims={}-{}_nodes={}_dp={}_{}".format(
                 self.learning_rate,
                 self.batch_size,
@@ -189,22 +193,27 @@ class Net(object):
         tf.add_to_collection("ops", self.train_op)
         tf.add_to_collection("ops", self.loss_op)
 
-        self.saver = tf.train.Saver(max_to_keep=1)
-
-    def _fit(self, features, targets):
+    def _fit(self, features, targets, retrieve_training=False):
         """ Network training """
 
-        # print('\x1b[1;33;40mTraining model ({} samples) on {} cores.\x1b[0m'.format(features.shape[0],self.n_cores))
         train_graph = tf.Graph()
 
         with train_graph.as_default():
             tf.set_random_seed(self.seed)
-            self._build(
-                trainable=True, inputDim=features.shape[1], outputDim=targets.shape[1]
-            )
+
+            if retrieve_training:
+                save_path = tf.train.latest_checkpoint(self.sessionDir)
+                self.saver = tf.train.import_meta_graph(save_path+'.meta')
+            else:
+                self._build(
+                    trainable=True, inputDim=features.shape[1], outputDim=targets.shape[1]
+                )
+                self.saver = tf.train.Saver(max_to_keep=1)
+
             summary_writer = tf.summary.FileWriter(
                 self.sessionDir, tf.get_default_graph()
             )
+            
             merged_summaries = tf.summary.merge_all()
             session_conf = tf.ConfigProto(
                 allow_soft_placement=True,
@@ -214,18 +223,19 @@ class Net(object):
             )
 
             with tf.Session(config=session_conf, graph=train_graph) as sess:
-                tfGlobals = tf.global_variables_initializer()
-                sess.run(tfGlobals)
-
+                if retrieve_training:
+                    self.saver.restore(sess,save_path)
+                else:
+                    tfGlobals = tf.global_variables_initializer()
+                    sess.run(tfGlobals)
+                    
                 step_init = self.step
 
                 error_buffer = deque([1e5] * 10)
 
                 n_runs_per_epoch = int(ceil(features.shape[0] / self.batch_size))
 
-                while self.step - step_init < self.max_epochs and error_buffer[
-                    0
-                ] <= np.mean(list(error_buffer)[1:]):
+                while self.step - step_init < self.max_epochs and error_buffer[0] <= np.mean(list(error_buffer)[1:]):
                     epoch_error = 0
 
                     # Run through each mini-batch
@@ -270,7 +280,7 @@ class Net(object):
                             global_step=self.step,
                         )
 
-                print("Training finished after {} epochs.".format(self.step))
+                print("Training finished after {} epochs.".format(self.step-step_init))
 
     def fit(
         self,
@@ -280,6 +290,7 @@ class Net(object):
         dists=None,
         cell_thresh=0.1,
         labels=None,
+        retrieve_training=False,
         **params
     ):  # Extract features and start training
 
@@ -291,7 +302,9 @@ class Net(object):
             )
         else:
             data = X
-        self.set_params(NNid="auto", **params)
+
+        if not retrieve_training:
+            self.set_params(NNid="auto", **params)
 
         if targetGenes is not None:
             if len(targetGenes) < self.dims[1]:
@@ -314,7 +327,8 @@ class Net(object):
             data.loc[filt, self.predictorGenes].values,
             data.loc[filt, self.targetGenes].values,
         )
-        self._fit(features, targets)
+
+        self._fit(features, targets, retrieve_training=retrieve_training)
 
     def predict(
         self, X_test, saver_path="", checkpoint=None
@@ -343,7 +357,7 @@ class Net(object):
         # Start session
         with tf.Session(config=session_conf, graph=test_graph) as sess:
             self.saver.restore(sess, checkpoint)
-            # todo: remove eval
+
             Y_impute = sess.run(
                 tf.get_collection("outputLayer")[0], feed_dict=feed_dict
             )
