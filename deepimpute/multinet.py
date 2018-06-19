@@ -26,7 +26,6 @@ def trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=False):
     net = Net(**NN_param_i)
     net.fit(data_i, targetGenes=targets, predictorGenes=features, labels=labels, retrieve_training=retrieve_training)
 
-    print(net.NNid)
     # retrieve the array
     params = list(NN_param_i.keys()) + ["targetGenes", "NNid", "predictorGenes"]
     args2return = [(attr, getattr(net, attr)) for attr in params]
@@ -105,7 +104,7 @@ class MultiNet(object):
 
     def fit(self, data, NN_lim="auto", cell_subset=None, NN_genes=None, retrieve_training=False):
         np.random.seed(seed=self.seed)
-
+        
         df = pd.DataFrame(data)
 
         self.setIDandRundir(df)
@@ -113,7 +112,7 @@ class MultiNet(object):
         # Change the output dimension if the data has too few genes
         if df.shape[1] < self.NN_params["dims"][1]:
             self.NN_params["dims"][1] = df.shape[1]
-
+        
         # Choose genes to impute
         genes_sort = df.quantile(.99).sort_values(ascending=False)
 
