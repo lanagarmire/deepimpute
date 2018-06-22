@@ -11,3 +11,4 @@ run
 .cache/
 .tox/
 .ipynb_checkpoints
+ignore/
