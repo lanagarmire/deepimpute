@@ -89,7 +89,7 @@ class Net(object):
                 setattr(self, key, par.copy())
             else:
                 setattr(self, key, par)
-        self.check_layer_params()
+        self._check_layer_params()
 
         if self.NNid == "auto":
             rand = binascii.b2a_hex(os.urandom(3))
@@ -108,7 +108,7 @@ class Net(object):
             )
         return self
 
-    def check_layer_params(self):
+    def _check_layer_params(self):
         for layer in self.layers:
             if "nb_neurons" in layer.keys() and type(layer["nb_neurons"]) is not int:
                 print(
@@ -124,7 +124,7 @@ class Net(object):
                 print("Addind a dense layer to connect to output neurons")
                 self.layers += [{"label": "dense", "activation": "relu"}]
 
-    def build_next_layer(self, current_layer, layer, trainable):
+    def _build_next_layer(self, current_layer, layer, trainable):
         """ Build one layer on top of the last one"""
 
         if layer["label"] == "dropout":
@@ -173,7 +173,7 @@ class Net(object):
                 if layer["label"] == "dense" and "nb_neurons" not in layer.keys():
                     trainable = True
                     layer["nb_neurons"] = outputDim
-                current_layer = self.build_next_layer(current_layer, layer, trainable)
+                current_layer = self._build_next_layer(current_layer, layer, trainable)
             # print('Layer-{}'.format(layer_nb),
             #      ', '.join(['{}: {}'.format(k, v) for k, v in layer.items()]))
 

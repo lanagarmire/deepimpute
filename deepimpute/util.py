@@ -62,20 +62,21 @@ def get_maxes(dataframe, limit):
 
 
 def get_input_genes(
-    data, dims, distanceMatrix=None, targets=None, predictorLimit=None, seed=1234
+    dataframeToImpute, dims, distanceMatrix=None, targets=None, predictorLimit=None, seed=1234
 ):
     if predictorLimit is None:
-        predictorLimit = data.shape[1]
-    predictorLimit = min(predictorLimit, data.shape[1])
-    predictors = data.quantile(.99).sort_values(ascending=False).index[0:predictorLimit]
+        predictorLimit = dataframeToImpute.shape[1]
+    predictorLimit = min(predictorLimit, dataframeToImpute.shape[1])
+    imputeOverThisThreshold = .99
+    predictors = dataframeToImpute.quantile(imputeOverThisThreshold).sort_values(ascending=False).index[0:predictorLimit]
 
     if targets is None:
         np.random.seed(seed)
-        targets = [np.random.choice(data.columns, dims[1], replace=False)]
+        targets = [np.random.choice(dataframeToImpute.columns, dims[1], replace=False)]
 
     if distanceMatrix is None:
         distanceMatrix = np.abs(
-            pd.DataFrame(np.corrcoef(data.T), index=data.columns, columns=data.columns)[
+            pd.DataFrame(np.corrcoef(dataframeToImpute.T), index=dataframeToImpute.columns, columns=dataframeToImpute.columns)[
                 predictors
             ]
         )
@@ -91,17 +92,18 @@ def get_input_genes(
     return in_out_genes
 
 
-def get_target_genes(gene_quantiles, NN_lim="auto"):
-    if NN_lim == "auto":
-        NN_genes = gene_quantiles[gene_quantiles > 5].index
+def _get_target_genes(gene_quantiles, minExpressionLevel, maxNumOfGenes):
+    print(minExpressionLevel)
+    if maxNumOfGenes == "auto":
+        targetGenes = gene_quantiles[gene_quantiles > minExpressionLevel].index
     else:
-        if NN_lim is None:
-            NN_lim = len(gene_quantiles)
-        NN_lim = min(NN_lim, len(gene_quantiles))
-        NN_genes = gene_quantiles.sort_values(ascending=False).index[:NN_lim]
-    print("Gene prediction limit set to {} genes".format(len(NN_genes)))
+        if maxNumOfGenes is None:
+            maxNumOfGenes = len(gene_quantiles)
+        maxNumOfGenes = min(maxNumOfGenes, len(gene_quantiles))
+        targetGenes = gene_quantiles.sort_values(ascending=False).index[:maxNumOfGenes]
+    print("Gene prediction limit set to {} genes".format(len(targetGenes)))
 
-    return NN_genes.tolist()
+    return targetGenes.tolist()
 
 
 def score_model(model, data, metric, cols=None):

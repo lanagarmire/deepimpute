@@ -11,16 +11,16 @@ from sklearn.metrics import r2_score
 
 from deepimpute.net import Net
 from deepimpute.normalizer import Normalizer
-from deepimpute.util import get_input_genes, get_target_genes
+from deepimpute.util import get_input_genes, _get_target_genes
 from deepimpute.util import score_model
 
 
-def newCoreInitializer(arr_to_populate):
+def _newCoreInitializer(arr_to_populate):
     global sharedArray
     sharedArray = arr_to_populate
 
 
-def trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=False):
+def _trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=False):
     features, targets = in_out
 
     net = Net(**NN_param_i)
@@ -32,7 +32,7 @@ def trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=False):
     return {k: v if k[0] != "_" else (k[1:], v) for k, v in args2return}
 
 
-def predictNet(data_i, NN_param_i, labels):
+def _predictNet(data_i, NN_param_i, labels):
     net = Net(**NN_param_i)
     data_i_ok = pd.DataFrame(
         np.reshape(data_i, list(map(len, labels))), index=labels[0], columns=labels[1]
@@ -48,8 +48,8 @@ def trainOrPredict(args):
         warnings.simplefilter("ignore", RuntimeWarning)
         data_i = np.ctypeslib.as_array(sharedArray)
     if mode == "predict":
-        return predictNet(data_i, NN_param_i, labels)
-    return trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=retrieve_training)
+        return _predictNet(data_i, NN_param_i, labels)
+    return _trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=retrieve_training)
 
 class MultiNet(object):
 
@@ -74,13 +74,14 @@ class MultiNet(object):
             NN_params["dims"] = [20, 500]
         self.NN_params = NN_params
         self.trainingParams = None
+
+        self._minExpressionLevel = NN_params['minExpressionLevel'] if 'minExpressionLevel' in NN_params else 5
         
     @property
     def maxcores(self):
         if self._maxcores == "all":
             return cpu_count()
-        else:
-            return self._maxcores
+        return self._maxcores
 
     @maxcores.setter
     def maxcores(self, value):
@@ -89,61 +90,66 @@ class MultiNet(object):
     def get_params(self, deep=False):
         return self.__dict__
 
-    def setIDandRundir(self, data):
+    def _setIDandRundir(self, data):
         # set runID
         runID = binascii.b2a_hex(os.urandom(5))
         if type(runID) is bytes:
             runID = runID.decode()
         self.NN_params["runDir"] = os.path.join(self.runDir, str(runID))
 
-    def getCores(self, NN_genes):
-        n_runs = int(ceil(1. * len(NN_genes) / self.NN_params["dims"][1]))
+    def _getRunsAndCores(self, geneCount):
+        n_runs = int(ceil(1. * geneCount / self.NN_params["dims"][1]))
         n_cores = min(self.maxcores, n_runs)
         self.NN_params["n_cores"] = max(1, int(self.maxcores / n_cores))
         return n_runs, n_cores
 
     def fit(self, data, NN_lim="auto", cell_subset=None, NN_genes=None, retrieve_training=False):
         np.random.seed(seed=self.seed)
+        targetGeneNames = NN_genes
         
-        df = pd.DataFrame(data)
+        inputExpressionMatrixDF = pd.DataFrame(data)
 
-        self.setIDandRundir(df)
+        self._setIDandRundir(inputExpressionMatrixDF)
 
         # Change the output dimension if the data has too few genes
-        if df.shape[1] < self.NN_params["dims"][1]:
-            self.NN_params["dims"][1] = df.shape[1]
+        if inputExpressionMatrixDF.shape[1] < self.NN_params["dims"][1]:
+            self.NN_params["dims"][1] = inputExpressionMatrixDF.shape[1]
+
+        outputColumns = self.NN_params["dims"][1]
         
         # Choose genes to impute
-        genes_sort = df.quantile(.99).sort_values(ascending=False)
+        imputeOverThisThreshold = .99
+        geneQuantiles = inputExpressionMatrixDF.quantile(imputeOverThisThreshold).sort_values(ascending=False)
 
-        if NN_genes is None:
-            NN_genes = get_target_genes(genes_sort, NN_lim=NN_lim)
+        if targetGeneNames is None:
+            targetGeneNames = _get_target_genes(geneQuantiles, minExpressionLevel = self._minExpressionLevel, maxNumOfGenes = NN_lim)
 
-        df_to_impute = df[NN_genes]
+        df_to_impute = inputExpressionMatrixDF[targetGeneNames]
 
-        n_runs, n_cores = self.getCores(NN_genes)
+        numberOfTargetGenes = len(targetGeneNames)
+        n_runs, n_cores = self._getRunsAndCores(numberOfTargetGenes)
 
         # ------------------------# Subnetworks #------------------------#
 
-        predictors = np.intersect1d(
-            genes_sort.index[genes_sort > self.predictorLimit], NN_genes
+        predictorGeneNames = np.intersect1d(
+            geneQuantiles.index[geneQuantiles > self.predictorLimit], targetGeneNames
         )
 
-        n_choose = int(len(NN_genes) / self.NN_params["dims"][1])
+        n_choose = int(numberOfTargetGenes / outputColumns)
 
         subGenelists = np.random.choice(
-            NN_genes, [n_choose, self.NN_params["dims"][1]], replace=False
+            targetGeneNames, [n_choose, outputColumns], replace=False
         ).tolist()
         if n_choose < n_runs:
             # Special case: for the last run, the output layer will have less nodes
             selectedGenes = np.reshape(subGenelists, -1)
-            subGenelists.append(np.setdiff1d(NN_genes, selectedGenes).tolist())
+            subGenelists.append(np.setdiff1d(targetGeneNames, selectedGenes).tolist())
 
         # ------------------------# Extracting input genes #------------------------#
 
         corrMatrix = 1 - np.abs(
-            pd.DataFrame(np.corrcoef(df_to_impute.T), index=NN_genes, columns=NN_genes)[
-                predictors
+            pd.DataFrame(np.corrcoef(df_to_impute.T), index=targetGeneNames, columns=targetGeneNames)[
+                predictorGeneNames
             ]
         )
 
@@ -197,7 +203,7 @@ class MultiNet(object):
             for in_out,trainingParams in zip(self.inOutGenes,self.trainingParams)
         ]
 
-        self.trainingParams = self.runOnMultipleCores(n_cores, trainData.flatten(), childJobs)
+        self.trainingParams = self._runOnMultipleCores(n_cores, trainData.flatten(), childJobs)
 
         self.networks = []
         for dictionnary in self.trainingParams:
@@ -205,11 +211,11 @@ class MultiNet(object):
 
         return self
 
-    def runOnMultipleCores(self, cores, data, childJobs):
+    def _runOnMultipleCores(self, cores, data, childJobs):
         sharedArray = sharedctypes.RawArray("d", data)
 
         pool = Pool(
-            processes=cores, initializer=newCoreInitializer, initargs=(sharedArray,)
+            processes=cores, initializer=_newCoreInitializer, initargs=(sharedArray,)
         )
         
         output_dicts = pool.map(trainOrPredict, childJobs)
@@ -230,7 +236,7 @@ class MultiNet(object):
             ((12, 15), net.__dict__, (idx, cols), "predict") for net in self.networks
         ]
 
-        output_dicts = self.runOnMultipleCores(self.maxcores, df_norm, childJobs)
+        output_dicts = self._runOnMultipleCores(self.maxcores, df_norm, childJobs)
 
         Y_imputed = pd.concat(output_dicts, axis=1)
         Y_not_imputed = df[
