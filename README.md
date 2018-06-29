@@ -13,7 +13,7 @@ To install DeepImpute, you only need to download the git repository at https://g
 ```bash
 git clone https://github.com/lanagarmire/deepimpute
 cd deepimpute
-pip install -e .
+pip install --user .
 ```
 
 ### Usage

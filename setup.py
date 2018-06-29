@@ -6,7 +6,7 @@ setup(
     name="deepimpute",
     version=VERSION,
     description="scRNA-seq imputation",
-    long_description=""" Deep learning (Tensorflow) based method for single cell RNA-seq datra imputation. """,
+    long_description=""" Deep learning (Tensorflow) based method for single cell RNA-seq data imputation. """,
     classifiers=[],
     keywords="Neural network, Deep Learning, scRNA-seq, single-cell, imputation",
     author="Cedric Aridakessian",
