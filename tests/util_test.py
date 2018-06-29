@@ -26,7 +26,7 @@ class TestUtil(unittest.TestCase):
 
     def test_get_target_genes(self):
         genes_quantiles = pd.Series([1, 15, 9, 10, 12])
-        res = util.get_target_genes(genes_quantiles, NN_lim=2)
+        res = util._get_target_genes(genes_quantiles, minExpressionLevel=5, maxNumOfGenes=2)
         self.assertEqual(sorted(res), [1, 4])
 
 

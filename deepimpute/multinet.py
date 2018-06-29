@@ -108,6 +108,9 @@ class MultiNet(object):
         targetGeneNames = NN_genes
         
         inputExpressionMatrixDF = pd.DataFrame(data)
+        print("Input dataset is {} genes and {} cells".format(inputExpressionMatrixDF.shape[1], inputExpressionMatrixDF.shape[0]))
+        print("First 3 rows and columns:")
+        print(inputExpressionMatrixDF.iloc[0:3, 0:3])
 
         self._setIDandRundir(inputExpressionMatrixDF)
 
