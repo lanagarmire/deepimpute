@@ -55,6 +55,15 @@ imputed = deepImpute(data, NN_lim='auto', n_cores=16, cell_subset=1)
 
 A more detailed usage of deepImpute's functionality is available in the iPython Notebook notebook_example.ipynb
 
+### Docker
+
+The Dockerfile runs an Ubuntu image containing Python3, TensorFlow, Jupyter and DeepImpute. The following commands will build the image and then run it starting a Jupyter server. You can try the included notebook in the deepimpute/examples folder.
+
+```bash
+docker build -t deepimpute .
+docker run -p 8888:8888 -it deepimpute
+```
+
 ### Running the tests
 
 Each file has been validated using a unittest script. They are all available in the test folder.
