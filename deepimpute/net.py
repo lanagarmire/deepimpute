@@ -27,6 +27,7 @@ class Net(object):
         NN_id=None,
         n_cores=1,
         seed=1234,
+        layers=None,
         runDir=os.path.join(tempfile.gettempdir(), "run"),
         **kwargs
     ):
@@ -46,11 +47,13 @@ class Net(object):
         self._batch_size = 64
 
         # Default layers
-        self.layers = [
-            {"label": "dense", "activation": "relu", "nb_neurons": 300},
-            {"label": "dropout", "activation": "dropout", "rate": 0.5},
-            {"label": "dense", "activation": "relu"},
-        ]
+        if layers is None:
+            layers = [
+                {"label": "dense", "activation": "relu", "nb_neurons": 300},
+                {"label": "dropout", "activation": "dropout", "rate": 0.5},
+                {"label": "dense", "activation": "relu"},
+            ]
+        self.layers = layers
 
         """ Builds the whole neural network model based on the configuration file (if any)"""
         self.set_params(**kwargs)

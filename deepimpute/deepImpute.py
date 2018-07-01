@@ -26,7 +26,6 @@ if __name__ == "__main__":
     parser.add_argument("inputFile", type=str, help="Path to input data.")
     parser.add_argument(
         "-o",
-        metavar="outputFile",
         type=str,
         help="Path to output data counts. Default: ./",
     )
@@ -53,13 +52,65 @@ if __name__ == "__main__":
         help="Cell subset to speed up training. \
                         Either a ratio (0<x<1) or a cell number (int). Default: 1 (all)",
     )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=0.0005,
+        help="Learning rate."
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=64,
+        help="Batch size."
+    )
+    parser.add_argument(
+        "--max-epochs",
+        type=int,
+        default=300,
+        help="Maximum number of epochs."
+    )
+    parser.add_argument(
+        "--hidden-neurons",
+        type=int,
+        default=300,
+        help="Number of neurons in the hidden dense layer."
+    )
+    parser.add_argument(
+        "--dropout-rate",
+        type=float,
+        default=0.5,
+        help="Dropout rate for the hidden dropout layer (0<rate<1)."
+    )
+    parser.add_argument(
+        "--nb-corr",
+        type=int,
+        default=20,
+        help="Number of input gene per target gene."
+    )
+    parser.add_argument(
+        "--output-neurons",
+        type=int,
+        default=500,
+        help="Number of output neurons per sub-network."
+    )
 
     args = parser.parse_args()
 
     data = pd.read_csv(args.inputFile, index_col=0)
     if args.cell_axis == "columns":
         data = data.T
+
+    NN_params = {'dims': [args.nb_corr,args.output_neurons],
+                 'learning_rate': args.learning_rate,
+                 'batch_size': args.batch_size,
+                 'max_epochs': args.max_epochs,
+                 'layers': [
+                     {"label": "dense", "activation": "relu", "nb_neurons": args.hidden_neurons},
+                     {"label": "dropout", "activation": "dropout", "rate": args.dropout_rate},
+                     {"label": "dense", "activation": "relu"}] }
+    
     imputed = deepImpute(
-        data, n_cores=args.cores, NN_lim=args.limit, cell_subset=args.subset
+        data, n_cores=args.cores, NN_lim=args.limit, cell_subset=args.subset, **NN_params
     )
-    imputed.to_csv(args.outputFile)
+    imputed.to_csv(args.o)
