@@ -56,25 +56,25 @@ if __name__ == "__main__":
         "--learning-rate",
         type=float,
         default=0.0005,
-        help="Learning rate."
+        help="Learning rate. Default: 0.0005"
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=64,
-        help="Batch size."
+        help="Batch size. Default: 64"
     )
     parser.add_argument(
         "--max-epochs",
         type=int,
         default=300,
-        help="Maximum number of epochs."
+        help="Maximum number of epochs. Default: 300"
     )
     parser.add_argument(
         "--hidden-neurons",
         type=int,
         default=300,
-        help="Number of neurons in the hidden dense layer."
+        help="Number of neurons in the hidden dense layer. Default: 300"
     )
     parser.add_argument(
         "--dropout-rate",
@@ -86,13 +86,13 @@ if __name__ == "__main__":
         "--nb-corr",
         type=int,
         default=20,
-        help="Number of input gene per target gene."
+        help="Number of input gene per target gene. Default: 20"
     )
     parser.add_argument(
         "--output-neurons",
         type=int,
         default=500,
-        help="Number of output neurons per sub-network."
+        help="Number of output neurons per sub-network. Default: 500"
     )
 
     args = parser.parse_args()

@@ -1,5 +1,9 @@
 # DeepImpute: an accurate and efficient deep learning method for single-cell RNA-seq data imputation
 
+Arisdakessian, Cedric, Olivier Poirion, Breck Yunits, Xun Zhu, and Lana Garmire.  
+"DeepImpute: an accurate, fast and scalable deep neural network method to impute single-cell RNA-Seq data." bioRxiv (2018): 353607"  
+https://www.biorxiv.org/content/early/2018/06/22/353607
+
 DeepImpute has been implemented in Python2 and Python3. The recommended version is Python3.
 
 ## Getting Started
@@ -23,9 +27,13 @@ DeepImpute can be used either on the commandline or as a Python package.
 Command line:
 
 ```
-usage: deepImpute.py [-h] [-o outputFile] [--ncores NCORES]
-                     [--cell-axis {rows,columns}] [--limit LIM]
-                     [--subset SUBSET]
+usage: deepImpute.py [-h] [-o O] [--cores CORES] [--cell-axis {rows,columns}]
+                     [--limit LIMIT] [--subset SUBSET]
+                     [--learning-rate LEARNING_RATE] [--batch-size BATCH_SIZE]
+                     [--max-epochs MAX_EPOCHS]
+                     [--hidden-neurons HIDDEN_NEURONS]
+                     [--dropout-rate DROPOUT_RATE] [--nb-corr NB_CORR]
+                     [--output-neurons OUTPUT_NEURONS]
                      inputFile
 
 scRNA-seq data imputation using DeepImpute.
@@ -35,13 +43,27 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  -o outputFile         Path to output data counts. Default: ./
-  --cores NCORES       Number of cores. Default: 5
+  -o O                  Path to output data counts. Default: ./
+  --cores CORES         Number of cores. Default: 5
   --cell-axis {rows,columns}
                         Cell dimension in the matrix. Default: rows
-  --limit LIM             Genes to impute (e.g. first 2000 genes). Default: auto
+  --limit LIMIT         Genes to impute (e.g. first 2000 genes). Default: auto
   --subset SUBSET       Cell subset to speed up training. Either a ratio
                         (0<x<1) or a cell number (int). Default: 1 (all)
+  --learning-rate LEARNING_RATE
+                        Learning rate. Default: 0.0005
+  --batch-size BATCH_SIZE
+                        Batch size. Default: 64
+  --max-epochs MAX_EPOCHS
+                        Maximum number of epochs. Default: 300
+  --hidden-neurons HIDDEN_NEURONS
+                        Number of neurons in the hidden dense layer. Default:
+                        300
+  --dropout-rate DROPOUT_RATE
+                        Dropout rate for the hidden dropout layer (0<rate<1).
+  --nb-corr NB_CORR     Number of input gene per target gene. Default: 20
+  --output-neurons OUTPUT_NEURONS
+                        Number of output neurons per sub-network. Default: 500
 ```
 
 Python package:
