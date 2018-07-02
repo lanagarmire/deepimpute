@@ -1,5 +1,7 @@
 # DeepImpute: an accurate and efficient deep learning method for single-cell RNA-seq data imputation
 
+[![Build Status](https://travis-ci.org/lanagarmire/deepimpute.svg?branch=master)](https://travis-ci.org/lanagarmire/deepimpute)
+
 Arisdakessian, Cedric, Olivier Poirion, Breck Yunits, Xun Zhu, and Lana Garmire.  
 "DeepImpute: an accurate, fast and scalable deep neural network method to impute single-cell RNA-Seq data." bioRxiv (2018): 353607"  
 https://www.biorxiv.org/content/early/2018/06/22/353607
