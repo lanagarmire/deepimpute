@@ -6,7 +6,12 @@ reformat:
 	black tests
 	black setup.py
 
+pytest:
+	pytest
+
 test:
+	# We run the tests separately instead of with unittest to
+	# avoid TensorFlow issue #8220 related to multiprocessing hanging.
 	python${PYTHON_VERSION} ./tests/normalizer_test.py
 	python${PYTHON_VERSION} ./tests/util_test.py
 	python${PYTHON_VERSION} ./tests/maskedArrays_test.py
@@ -26,4 +31,5 @@ coverage:
 	echo "Results in: file://${CURDIR}/htmlcov/index.html"
 
 test-mp-hang-bug:
+	# This triggers TensorFlow issue #8220
 	python${PYTHON_VERSION} -m unittest discover -s deepimpute -p '*_test.py'
