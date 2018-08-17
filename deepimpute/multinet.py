@@ -108,7 +108,7 @@ class MultiNet(object):
         targetGeneNames = NN_genes
         
         inputExpressionMatrixDF = pd.DataFrame(data)
-        print("Input dataset is {} genes and {} cells".format(inputExpressionMatrixDF.shape[1], inputExpressionMatrixDF.shape[0]))
+        print("Input dataset is {} genes (columns) and {} cells (rows)".format(inputExpressionMatrixDF.shape[1], inputExpressionMatrixDF.shape[0]))
         print("First 3 rows and columns:")
         print(inputExpressionMatrixDF.iloc[0:3, 0:3])
 
@@ -130,6 +130,9 @@ class MultiNet(object):
         df_to_impute = inputExpressionMatrixDF[targetGeneNames]
 
         numberOfTargetGenes = len(targetGeneNames)
+        if (numberOfTargetGenes == 0):
+            raise Exception("Unable to compute any target genes. Is your data log transformed? Perhaps try with a lower minExpressionLevel.")
+
         n_runs, n_cores = self._getRunsAndCores(numberOfTargetGenes)
 
         # ------------------------# Subnetworks #------------------------#
@@ -137,6 +140,9 @@ class MultiNet(object):
         predictorGeneNames = np.intersect1d(
             geneQuantiles.index[geneQuantiles > self.predictorLimit], targetGeneNames
         )
+
+        if (len(predictorGeneNames) == 0):
+            raise Exception("Unable to compute any predictor genes. Is your data log transformed? Perhaps try with a lower predictorLimit.")
 
         n_choose = int(numberOfTargetGenes / outputColumns)
 
@@ -155,6 +161,8 @@ class MultiNet(object):
                 predictorGeneNames
             ]
         )
+
+
 
         if self.inOutGenes is None:
 

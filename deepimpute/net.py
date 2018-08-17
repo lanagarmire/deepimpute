@@ -236,7 +236,8 @@ class Net(object):
 
                 error_buffer = deque([1e5] * 10)
 
-                n_runs_per_epoch = int(ceil(features.shape[0] / self.batch_size))
+                # Cast batch_size to float to ensure this isn't 0 in Python2 when we have a small matrix
+                n_runs_per_epoch = int(ceil(features.shape[0] / float(self.batch_size)))
 
                 while self.step - step_init < self.max_epochs and error_buffer[0] <= np.mean(list(error_buffer)[1:]):
                     epoch_error = 0

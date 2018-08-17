@@ -47,6 +47,8 @@ def get_int(name):
 
 def get_maxes(dataframe, limit):
     genes = dataframe.values
+    genesLength = len(genes)
+    limit = genesLength if genesLength < limit else limit
     topValues = genes[:limit].copy()
     topIndices = np.arange(limit)
     currentMinIdxInTopValues = np.argmin(topValues)
@@ -81,9 +83,11 @@ def get_input_genes(
             ]
         )
     in_out_genes = []
+
+    max_limit = dims[0]
     for genes in targets:
         predictorGenes = np.unique(
-            [get_maxes(distanceMatrix.loc[gene], dims[0]) for gene in genes]
+            [get_maxes(distanceMatrix.loc[gene], max_limit) for gene in genes]
         )
         predictors_noTarget = [gene for gene in predictorGenes if gene not in genes]
         if len(predictors_noTarget) > 0.01 * dims[1]:
