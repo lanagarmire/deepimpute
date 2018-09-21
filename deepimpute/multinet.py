@@ -220,6 +220,9 @@ class MultiNet(object):
         for dictionnary in self.trainingParams:
             self.networks.append(Net(**dictionnary))
 
+        print('---- Hyperparameters summary ----')
+        self.networks[0].display_params()
+
         return self
 
     def _runOnMultipleCores(self, cores, data, childJobs):
