@@ -50,7 +50,7 @@ class Net(object):
             layers = [
                 {"label": "dense", "activation": "relu", "nb_neurons": 256},
                 {"label": "dropout", "activation": "dropout", "rate": 0.2},
-                {"label": "dense", "activation": None},
+                {"label": "dense", "activation": "softplus"},
             ]
         self.layers = layers
 
