@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 
-from keras import backend as K
 from deepimpute.maskedArrays import MaskedArray
 
 """ Preprocessing functions """
@@ -135,4 +135,4 @@ def score_model(model, data, metric, cols=None):
     return score_res
 
 def wMSE(yTrue,yPred):
-    return K.mean(yTrue*K.square(yTrue-yPred))
+    return tf.reduce_mean(tf.square(yTrue-yPred))

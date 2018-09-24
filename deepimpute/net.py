@@ -48,9 +48,9 @@ class Net(object):
         # Default layers
         if layers is None:
             layers = [
-                {"label": "dense", "activation": "relu", "nb_neurons": 300},
+                {"label": "dense", "activation": "relu", "nb_neurons": 256},
                 {"label": "dropout", "activation": "dropout", "rate": 0.2},
-                {"label": "dense", "activation": "relu"},
+                {"label": "dense", "activation": None},
             ]
         self.layers = layers
 
@@ -176,7 +176,8 @@ class Net(object):
                   epochs=self.max_epochs,
                   batch_size=self.batch_size,
                   callbacks=[EarlyStopping(monitor='val_loss', patience=10)],
-                  validation_data=(features[test_samples,:],targets[test_samples,:])
+                  validation_data=(features[test_samples,:],targets[test_samples,:]),
+                  verbose=0
         )
 
         # serialize model to JSON
@@ -188,6 +189,8 @@ class Net(object):
         # serialize weights to HDF5
         model.save_weights("{}/model.h5".format(self.sessionDir))
         print("Saved model to disk")
+        
+        return model
 
     def fit(
         self,
@@ -235,7 +238,10 @@ class Net(object):
             data.loc[filt, self.targetGenes].values,
         )
 
-        self._fit(features, targets, retrieve_training=retrieve_training)
+        model = self._fit(features, targets, retrieve_training=retrieve_training)
+
+        return model
+        
 
     def predict(
         self, X_test, saver_path="", checkpoint=None
@@ -246,7 +252,8 @@ class Net(object):
         loaded_model_json = json_file.read()
         json_file.close()
         model = model_from_json(loaded_model_json)
-
+        model.load_weights('{}/model.h5'.format(self.sessionDir))
+        
         Y_impute = model.predict(X_test[self.predictorGenes])
         
         if np.sum(np.isnan(Y_impute)) > 0:
