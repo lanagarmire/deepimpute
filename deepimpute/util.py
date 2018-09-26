@@ -15,8 +15,10 @@ def exp1x(x):
     return np.exp(x) - 1
 
 
-def libNorm(x):
-    return 1.e6 / np.sum(x + 1)
+def libNorm(scale=10000):
+    def _libNorm(x):
+        return scale / np.sum(x)
+    return _libNorm
 
 
 def set_int(name):

@@ -19,10 +19,12 @@ class Normalizer(object):
     def fromName(cls, name):
         if name is None:
             return cls()
+        elif name == "libSize":
+            return cls(name=name, factorFn=libNorm())
         elif name == "log_or_exp":
             return cls(name=name, activations=[log1x, exp1x])
         elif name == "libSizeLog":
-            return cls(name=name, activations=[log1x, exp1x], factorFn=libNorm)
+            return cls(name=name, activations=[log1x, exp1x], factorFn=libNorm())
         else:
             print("Unknown method " + name)
 
@@ -36,10 +38,8 @@ class Normalizer(object):
     @property
     def factorFn(self):
         if self._factorFn is None:
-
             def one(x):
                 return 1
-
             return one
         else:
             return self._factorFn
