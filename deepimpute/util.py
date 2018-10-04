@@ -136,5 +136,11 @@ def score_model(model, data, metric, cols=None):
     )
     return score_res
 
-def wMSE(yTrue,yPred):
-    return tf.reduce_mean(tf.square(yTrue-yPred))
+def wMSE(y_true,y_pred):
+    return tf.reduce_mean(y_true*tf.square(y_true-y_pred))
+
+def poisson_loss(y_true,y_pred):
+    # mask = tf.cast(y_true>0,tf.float32)
+    y_true = y_true + 0.001
+    NLL = tf.lgamma(y_pred+1)-y_pred*tf.log(y_true)
+    return tf.reduce_mean(NLL)

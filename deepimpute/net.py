@@ -12,7 +12,8 @@ from sklearn.metrics import r2_score
 from multiprocessing import cpu_count
 import tempfile
 
-from deepimpute.util import get_int, set_int, get_input_genes, wMSE
+from deepimpute.util import get_int, set_int, get_input_genes
+from deepimpute.util import wMSE, poisson_loss
 from deepimpute.util import score_model
 
 os.environ["TF_CPP_MIN_VLOG_LEVEL"] = "0"
@@ -39,7 +40,7 @@ class Net(object):
         # Some Network Parameters
         self.step = 0
         self._max_epochs = 300
-        self.loss = "wMSE"
+        self.loss = "mean_squared_error"
         self.optimizer = "Adam"
         self.learning_rate = 1e-4
         self._dims = dims
@@ -87,7 +88,7 @@ class Net(object):
             print('Layer-{}'.format(nb),pretty_display)
         print('Batch size',self.batch_size)
         print('Learning rate',self.learning_rate)
-        print('Loss function',self.loss.__name__)        
+        print('Loss function',self.loss)        
 
     # Load parameters from the configuration file
     def set_params(self, **params):
@@ -100,9 +101,11 @@ class Net(object):
             else:
                 setattr(self, key, par)
         self._check_layer_params()
-        
-        if self.loss == 'wMSE':
-            self.loss = wMSE
+
+        try:
+            self.loss = eval(self.loss)
+        except:
+            pass
 
         if self.NNid == "auto":
             rand = binascii.b2a_hex(os.urandom(3))
@@ -233,6 +236,12 @@ class Net(object):
 
         filt = (data[self.targetGenes] > 0).sum(axis=1) >= self.dims[1] * cell_thresh
 
+        n_iter = 0
+        while (filt.astype(int).sum() == 0) and (n_iter<10000):
+            cell_thresh /= 2
+            n_iter += 1
+            filt = (data[self.targetGenes] > 0).sum(axis=1) >= self.dims[1] * cell_thresh 
+        
         features, targets = (
             data.loc[filt, self.predictorGenes].values,
             data.loc[filt, self.targetGenes].values,
