@@ -1,25 +1,7 @@
 import numpy as np
-import pandas as pd
 import tensorflow as tf
 
-from deepimpute.maskedArrays import MaskedArray
-
 """ Preprocessing functions """
-
-
-def log1x(x):
-    return np.log(1 + x)
-
-
-def exp1x(x):
-    return np.exp(x) - 1
-
-
-def libNorm(scale=10000):
-    def _libNorm(x):
-        return scale / np.sum(x)
-    return _libNorm
-
 
 def set_int(name):
 
@@ -35,7 +17,6 @@ def set_int(name):
 
     return setter_wrapper
 
-
 def get_int(name):
 
     def getter_wrapper(self):
@@ -47,100 +28,14 @@ def get_int(name):
 
     return getter_wrapper
 
-
-def get_maxes(dataframe, limit):
-    genes = dataframe.values
-    genesLength = len(genes)
-    limit = genesLength if genesLength < limit else limit
-    topValues = genes[:limit].copy()
-    topIndices = np.arange(limit)
-    currentMinIdxInTopValues = np.argmin(topValues)
-    currentMinVal = topValues[currentMinIdxInTopValues]
-    for idx, val in enumerate(genes[limit:]):
-        if val <= currentMinVal:
-            continue
-        topIndices[currentMinIdxInTopValues] = idx + limit
-        topValues[currentMinIdxInTopValues] = val
-        currentMinIdxInTopValues = np.argmin(topValues)
-        currentMinVal = topValues[currentMinIdxInTopValues]
-    return dataframe.index[topIndices]
-
-
-def get_input_genes(
-    dataframeToImpute, dims, distanceMatrix=None, targets=None, predictorLimit=None, seed=1234
-):
-    if predictorLimit is None:
-        predictorLimit = dataframeToImpute.shape[1]
-    predictorLimit = min(predictorLimit, dataframeToImpute.shape[1])
-    imputeOverThisThreshold = .99
-    predictors = dataframeToImpute.quantile(imputeOverThisThreshold).sort_values(ascending=False).index[0:predictorLimit]
-
-    if targets is None:
-        np.random.seed(seed)
-        targets = [np.random.choice(dataframeToImpute.columns, dims[1], replace=False)]
-
-    if distanceMatrix is None:
-        distanceMatrix = np.abs(
-            pd.DataFrame(np.corrcoef(dataframeToImpute.T), index=dataframeToImpute.columns, columns=dataframeToImpute.columns)[
-                predictors
-            ]
-        )
-    in_out_genes = []
-
-    max_limit = dims[0]
-    for genes in targets:
-        predictorGenes = np.unique(
-            [get_maxes(distanceMatrix.loc[gene], max_limit) for gene in genes]
-        )
-        predictors_noTarget = [gene for gene in predictorGenes if gene not in genes]
-        if len(predictors_noTarget) > 0.01 * dims[1]:
-            predictorGenes = predictors_noTarget
-        in_out_genes.append((predictorGenes, genes))
-    return in_out_genes
-
-
-def _get_target_genes(gene_quantiles, minExpressionLevel, maxNumOfGenes):
-    print(minExpressionLevel)
-    if maxNumOfGenes == "auto":
-        targetGenes = gene_quantiles[gene_quantiles > minExpressionLevel].index
-    else:
-        if maxNumOfGenes is None:
-            maxNumOfGenes = len(gene_quantiles)
-        maxNumOfGenes = min(maxNumOfGenes, len(gene_quantiles))
-        targetGenes = gene_quantiles.sort_values(ascending=False).index[:maxNumOfGenes]
-    print("Gene prediction limit set to {} genes".format(len(targetGenes)))
-
-    return targetGenes.tolist()
-
-
-def score_model(model, data, metric, cols=None):
-    # Create masked array
-    if cols is None:
-        cols = data.columns
-
-    maskedData = MaskedArray(data=data)
-    maskedData.generate()
-    maskedDf = pd.DataFrame(
-        maskedData.getMaskedMatrix(), index=data.index, columns=data.columns
-    )
-    # Predict
-    # model.fit(maskedDf)
-    imputed = model.predict(maskedDf)
-
-    imputedGenes = np.intersect1d(cols, imputed.columns)
-
-    # Compare imputed masked array and input
-    maskedIdx = maskedDf[imputedGenes].values != data[imputedGenes].values
-    score_res = metric(
-        data[imputedGenes].values[maskedIdx], imputed[imputedGenes].values[maskedIdx]
-    )
-    return score_res
+""" Custom loss functions """
 
 def wMSE(y_true,y_pred):
     return tf.reduce_mean(y_true*tf.square(y_true-y_pred))
 
 def poisson_loss(y_true,y_pred):
     # mask = tf.cast(y_true>0,tf.float32)
-    y_true = y_true + 0.001
-    NLL = tf.lgamma(y_pred+1)-y_pred*tf.log(y_true)
+    y_true = y_true + 0.0001
+    NLL = tf.lgamma(y_pred+1)-y_pred*tf.log(y_true)+y_true
     return tf.reduce_mean(NLL)
+

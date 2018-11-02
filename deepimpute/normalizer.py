@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
 
-from deepimpute.util import log1x, exp1x, libNorm
-
+def libNorm(scale=10000):
+    def _libNorm(x):
+        return scale / np.sum(x)
+    return _libNorm
 
 class Normalizer(object):
 
@@ -22,9 +24,11 @@ class Normalizer(object):
         elif name == "libSize":
             return cls(name=name, factorFn=libNorm())
         elif name == "log_or_exp":
-            return cls(name=name, activations=[log1x, exp1x])
+            return cls(name=name, activations=[np.log1p, np.expm1])
         elif name == "libSizeLog":
-            return cls(name=name, activations=[log1x, exp1x], factorFn=libNorm())
+            return cls(name=name, activations=[np.log1p, np.expm1], factorFn=libNorm())
+        elif name == "libSizeSqrt":
+            return cls(name=name, activations=[np.sqrt, np.square], factorFn=libNorm())
         else:
             print("Unknown method " + name)
 
