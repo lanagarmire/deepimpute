@@ -57,7 +57,7 @@ class MultiNet(object):
         self,
         n_cores=4,
         predictorLimit=10,
-        preproc="log_or_exp",
+        normalization="log_or_exp",
         runDir=os.path.join(tempfile.gettempdir(), "run"),
         seed=0,
         **NN_params
@@ -65,7 +65,7 @@ class MultiNet(object):
         self._maxcores = n_cores
         self.predictorLimit = predictorLimit
         self.inOutGenes = None
-        self.norm = Normalizer.fromName(preproc)
+        self.norm = Normalizer.fromName(normalization)
         self.runDir = runDir
         self.seed = seed
 
@@ -237,7 +237,7 @@ class MultiNet(object):
         pool.join()
         return output_dicts
 
-    def predict(self, data, imputed_only=False, restore_pos_values=True):
+    def predict(self, data, imputed_only=False, restore_pos_values=False):
         print("Starting prediction")
         df = pd.DataFrame(data)
 
@@ -263,6 +263,8 @@ class MultiNet(object):
             Y_total = Y_total.mask(df > 0, df)
         if imputed_only:
             Y_total = Y_total[Y_imputed.columns]
+
+        Y_total[np.isinf(Y_total) | np.isnan(Y_total)] = 1e4
 
         if type(data) == type(pd.DataFrame()):
             return Y_total
