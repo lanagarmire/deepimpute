@@ -56,14 +56,14 @@ class MultiNet(object):
     def __init__(
         self,
         n_cores=4,
-        predictorLimit=10,
+        predictorDropoutLimit=.9,
         normalization="log_or_exp",
         runDir=os.path.join(tempfile.gettempdir(), "run"),
         seed=0,
         **NN_params
     ):
         self._maxcores = n_cores
-        self.predictorLimit = predictorLimit
+        self.predictorDropoutLimit = predictorDropoutLimit
         self.inOutGenes = None
         self.norm = Normalizer.fromName(normalization)
         self.runDir = runDir
@@ -75,7 +75,7 @@ class MultiNet(object):
         self.NN_params = NN_params
         self.trainingParams = None
 
-        self._minExpressionLevel = NN_params['minExpressionLevel'] if 'minExpressionLevel' in NN_params else 5
+        self._minExpressionLevel = NN_params['minExpressionLevel'] if 'minExpressionLevel' in NN_params else 100
         
     @property
     def maxcores(self):
@@ -118,14 +118,13 @@ class MultiNet(object):
         if inputExpressionMatrixDF.shape[1] < self.NN_params["dims"][1]:
             self.NN_params["dims"][1] = inputExpressionMatrixDF.shape[1]
 
-        outputColumns = self.NN_params["dims"][1]
+        subnetOutputColumns = self.NN_params["dims"][1]
         
         # Choose genes to impute
-        imputeOverThisThreshold = .99
-        geneQuantiles = inputExpressionMatrixDF.quantile(imputeOverThisThreshold).sort_values(ascending=False)
+        geneCounts = inputExpressionMatrixDF.sum().sort_values(ascending=False)
 
         if targetGeneNames is None:
-            targetGeneNames = _get_target_genes(geneQuantiles, minExpressionLevel = self._minExpressionLevel, maxNumOfGenes = NN_lim)
+            targetGeneNames = _get_target_genes(geneCounts, minExpressionLevel = self._minExpressionLevel, maxNumOfGenes = NN_lim)
 
         df_to_impute = inputExpressionMatrixDF[targetGeneNames]
 
@@ -137,33 +136,29 @@ class MultiNet(object):
 
         # ------------------------# Subnetworks #------------------------#
 
-        predictorGeneNames = np.intersect1d(
-            geneQuantiles.index[geneQuantiles > self.predictorLimit], targetGeneNames
-        )
-
-        if (len(predictorGeneNames) == 0):
-            raise Exception("Unable to compute any predictor genes. Is your data log transformed? Perhaps try with a lower predictorLimit.")
-
-        n_choose = int(numberOfTargetGenes / outputColumns)
+        n_choose = int(numberOfTargetGenes / subnetOutputColumns)
 
         subGenelists = np.random.choice(
-            targetGeneNames, [n_choose, outputColumns], replace=False
+            targetGeneNames, [n_choose, subnetOutputColumns], replace=False
         ).tolist()
+        
         if n_choose < n_runs:
-            # Special case: for the last run, the output layer will have less nodes
+            # Special case: for the last run, the output layer will have previous targets
             selectedGenes = np.reshape(subGenelists, -1)
-            subGenelists.append(np.setdiff1d(targetGeneNames, selectedGenes).tolist())
+            leftOutGenes = np.setdiff1d(targetGeneNames, selectedGenes)
+
+            fill_genes = np.random.choice(selectedGenes,
+                                          subnetOutputColumns-len(leftOutGenes),
+                                          replace=False)
+
+            subGenelists.append(np.concatenate([leftOutGenes,fill_genes]).tolist())
 
         # ------------------------# Extracting input genes #------------------------#
 
         corrMatrix = 1 - np.abs(
-            pd.DataFrame(np.corrcoef(df_to_impute.T), index=targetGeneNames, columns=targetGeneNames)[
-                predictorGeneNames
-            ]
+            pd.DataFrame(np.corrcoef(df_to_impute.T), index=targetGeneNames, columns=targetGeneNames)
         )
-
-
-
+        
         if self.inOutGenes is None:
 
             self.inOutGenes = get_input_genes(
@@ -171,7 +166,7 @@ class MultiNet(object):
                 self.NN_params["dims"],
                 distanceMatrix=corrMatrix,
                 targets=subGenelists,
-                predictorLimit=self.predictorLimit,
+                predictorDropoutLimit=self.predictorDropoutLimit
             )
 
         # ------------------------# Subsets for fitting #------------------------#
@@ -253,6 +248,8 @@ class MultiNet(object):
         output_dicts = self._runOnMultipleCores(self.maxcores, df_norm, childJobs)
 
         Y_imputed = pd.concat(output_dicts, axis=1)
+        Y_imputed = Y_imputed.groupby(by=Y_imputed.columns,axis=1).mean()
+        
         Y_not_imputed = df[
             [gene for gene in df.columns if gene not in Y_imputed.columns]
         ]
@@ -261,6 +258,9 @@ class MultiNet(object):
         )
         if restore_pos_values:
             Y_total = Y_total.mask(df > 0, df)
+        else:
+            Y_total = pd.concat([Y_total,df]).max(level=0)
+            
         if imputed_only:
             Y_total = Y_total[Y_imputed.columns]
 

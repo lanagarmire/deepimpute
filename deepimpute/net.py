@@ -39,8 +39,8 @@ class Net(object):
 
         # Some Network Parameters
         self.step = 0
-        self._max_epochs = 300
-        self.loss = "mean_squared_error"
+        self._max_epochs = 500
+        self.loss = "wMSE"
         self.optimizer = "Adam"
         self.learning_rate = 1e-4
         self._dims = dims
@@ -49,7 +49,7 @@ class Net(object):
         # Default layers
         if layers is None:
             layers = [
-                {"label": "dense", "activation": "relu", "nb_neurons": 256},
+                {"label": "dense", "activation": "relu", "nb_neurons": 128},
                 {"label": "dropout", "activation": "dropout", "rate": 0.2},
                 {"label": "dense", "activation": "softplus"},
             ]
@@ -202,7 +202,6 @@ class Net(object):
         targetGenes=None,
         predictorGenes=None,
         dists=None,
-        cell_thresh=0.1,
         labels=None,
         retrieve_training=False,
         **params
@@ -229,23 +228,22 @@ class Net(object):
                 data,
                 self.dims,
                 distanceMatrix=dists,
-                targets=targetGenes,
-                predictorLimit=None,
+                targets=targetGenes
             )[0]
         else:
             self.predictorGenes, self.targetGenes = predictorGenes, targetGenes
 
-        filt = (data[self.targetGenes] > 0).sum(axis=1) >= self.dims[1] * cell_thresh
+        # filt = (data[self.targetGenes] > 0).sum(axis=1) >= self.dims[1] * cell_thresh
 
-        n_iter = 0
-        while (filt.astype(int).sum() == 0) and (n_iter<10000):
-            cell_thresh /= 2
-            n_iter += 1
-            filt = (data[self.targetGenes] > 0).sum(axis=1) >= self.dims[1] * cell_thresh 
+        # n_iter = 0
+        # while (filt.astype(int).sum() == 0) and (n_iter<10000):
+        #     cell_thresh /= 2
+        #     n_iter += 1
+        #     filt = (data[self.targetGenes] > 0).sum(axis=1) >= self.dims[1] * cell_thresh 
         
         features, targets = (
-            data.loc[filt, self.predictorGenes].values,
-            data.loc[filt, self.targetGenes].values,
+            data.loc[:, self.predictorGenes].values,
+            data.loc[:, self.targetGenes].values,
         )
 
         model = self._fit(features, targets, retrieve_training=retrieve_training)

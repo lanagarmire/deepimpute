@@ -47,69 +47,46 @@ def get_int(name):
 
     return getter_wrapper
 
-
-def get_maxes(dataframe, limit):
-    genes = dataframe.values
-    genesLength = len(genes)
-    limit = genesLength if genesLength < limit else limit
-    topValues = genes[:limit].copy()
-    topIndices = np.arange(limit)
-    currentMinIdxInTopValues = np.argmin(topValues)
-    currentMinVal = topValues[currentMinIdxInTopValues]
-    for idx, val in enumerate(genes[limit:]):
-        if val <= currentMinVal:
-            continue
-        topIndices[currentMinIdxInTopValues] = idx + limit
-        topValues[currentMinIdxInTopValues] = val
-        currentMinIdxInTopValues = np.argmin(topValues)
-        currentMinVal = topValues[currentMinIdxInTopValues]
-    return dataframe.index[topIndices]
-
-
 def get_input_genes(
-    dataframeToImpute, dims, distanceMatrix=None, targets=None, predictorLimit=None, seed=1234
+        dataframeToImpute, dims, distanceMatrix=None, targets=None, predictorDropoutLimit=.99,seed=1234
 ):
-    if predictorLimit is None:
-        predictorLimit = dataframeToImpute.shape[1]
-    predictorLimit = min(predictorLimit, dataframeToImpute.shape[1])
-    imputeOverThisThreshold = .99
-    predictors = dataframeToImpute.quantile(imputeOverThisThreshold).sort_values(ascending=False).index[0:predictorLimit]
+    geneDropoutRate = (dataframeToImpute==0).mean()
+    potential_predictors = geneDropoutRate.index[geneDropoutRate < predictorDropoutLimit]
 
+    print("Keeping {} potential predictors.".format(len(potential_predictors)))
+    
     if targets is None:
         np.random.seed(seed)
         targets = [np.random.choice(dataframeToImpute.columns, dims[1], replace=False)]
 
     if distanceMatrix is None:
-        distanceMatrix = np.abs(
-            pd.DataFrame(np.corrcoef(dataframeToImpute.T), index=dataframeToImpute.columns, columns=dataframeToImpute.columns)[
-                predictors
-            ]
-        )
+        distanceMatrix = pd.DataFrame(
+            np.abs(np.corrcoef(dataframeToImpute.T)),
+            index=dataframeToImpute.columns, columns=dataframeToImpute.columns
+        )[potential_predictors]
     in_out_genes = []
 
     max_limit = dims[0]
     for genes in targets:
-        predictorGenes = np.unique(
-            [get_maxes(distanceMatrix.loc[gene], max_limit) for gene in genes]
-        )
-        predictors_noTarget = [gene for gene in predictorGenes if gene not in genes]
-        if len(predictors_noTarget) > 0.01 * dims[1]:
-            predictorGenes = predictors_noTarget
+        pred_to_rmv = np.setdiff1d(potential_predictors,targets)
+        subMatrix = distanceMatrix.loc[genes].drop(pred_to_rmv,axis=1)
+        sorted_idx = np.argsort(-subMatrix.values,axis=1)
+        predictorGenes = subMatrix.columns[sorted_idx[:,:max_limit]].values.flatten()        
         in_out_genes.append((predictorGenes, genes))
     return in_out_genes
 
 
-def _get_target_genes(gene_quantiles, minExpressionLevel, maxNumOfGenes):
-    print("Min expression level for imputation: {}".format(minExpressionLevel))
-    
+def _get_target_genes(gene_counts, minExpressionLevel, maxNumOfGenes):
     if maxNumOfGenes == "auto":
-        targetGenes = gene_quantiles[gene_quantiles > minExpressionLevel].index
+        targetGenes = gene_counts[gene_counts > minExpressionLevel].index
+        print("Minimum gene count for imputation: {}".format(minExpressionLevel))
+
     else:
         if maxNumOfGenes is None:
-            maxNumOfGenes = len(gene_quantiles)
-        maxNumOfGenes = min(maxNumOfGenes, len(gene_quantiles))
-        targetGenes = gene_quantiles.sort_values(ascending=False).index[:maxNumOfGenes]
-    print("Gene prediction limit set to {} genes".format(len(targetGenes)))
+            maxNumOfGenes = len(gene_counts)
+        maxNumOfGenes = min(maxNumOfGenes, len(gene_counts))
+        targetGenes = gene_counts.sort_values(ascending=False).index[:maxNumOfGenes]
+        print("Gene prediction limit set to {} genes".format(len(targetGenes)))
 
     return targetGenes.tolist()
 
