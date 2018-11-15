@@ -79,7 +79,8 @@ def get_input_genes(
 def _get_target_genes(gene_counts, minExpressionLevel, maxNumOfGenes):
     if maxNumOfGenes == "auto":
         targetGenes = gene_counts[gene_counts > minExpressionLevel].index
-        print("Minimum gene count for imputation: {}".format(minExpressionLevel))
+        print("Minimum gene count for imputation set to {}, leaving {} genes for imputation."
+              .format(minExpressionLevel,len(targetGenes)))
 
     else:
         if maxNumOfGenes is None:

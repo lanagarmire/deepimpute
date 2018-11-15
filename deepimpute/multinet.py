@@ -57,6 +57,7 @@ class MultiNet(object):
         self,
         n_cores=4,
         predictorDropoutLimit=.9,
+        minExpressionLevel=100,
         normalization="log_or_exp",
         runDir=os.path.join(tempfile.gettempdir(), "run"),
         seed=0,
@@ -74,8 +75,7 @@ class MultiNet(object):
             NN_params["dims"] = [20, 512]
         self.NN_params = NN_params
         self.trainingParams = None
-
-        self._minExpressionLevel = NN_params['minExpressionLevel'] if 'minExpressionLevel' in NN_params else 100
+        self._minExpressionLevel = minExpressionLevel
         
     @property
     def maxcores(self):
