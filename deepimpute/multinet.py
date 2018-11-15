@@ -71,7 +71,7 @@ class MultiNet(object):
 
         NN_params["seed"] = seed
         if "dims" not in NN_params.keys():
-            NN_params["dims"] = [20, 500]
+            NN_params["dims"] = [20, 512]
         self.NN_params = NN_params
         self.trainingParams = None
 

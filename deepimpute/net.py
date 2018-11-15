@@ -151,7 +151,8 @@ class Net(object):
 
             if layer["label"] == "dense":
                 model.add(Dense(layer["nb_neurons"]))
-                model.add(Activation(layer["activation"]))
+                if layer["activation"] is not None:
+                    model.add(Activation(layer["activation"]))
             elif layer["label"] == "dropout":
                 model.add(Dropout(layer["rate"]))
             else:

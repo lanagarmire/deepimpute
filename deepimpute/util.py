@@ -100,7 +100,8 @@ def get_input_genes(
 
 
 def _get_target_genes(gene_quantiles, minExpressionLevel, maxNumOfGenes):
-    print(minExpressionLevel)
+    print("Min expression level for imputation: {}".format(minExpressionLevel))
+    
     if maxNumOfGenes == "auto":
         targetGenes = gene_quantiles[gene_quantiles > minExpressionLevel].index
     else:
