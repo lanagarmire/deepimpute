@@ -48,10 +48,10 @@ def get_int(name):
     return getter_wrapper
 
 def get_input_genes(
-        dataframeToImpute, dims, distanceMatrix=None, targets=None, predictorDropoutLimit=.99,seed=1234
+        dataframeToImpute, dims, distanceMatrix=None, targets=None, seed=1234 #predictorDropoutLimit=.99,seed=1234
 ):
-    geneDropoutRate = (dataframeToImpute==0).mean()
-    potential_predictors = geneDropoutRate.index[geneDropoutRate < predictorDropoutLimit]
+    #geneDropoutRate = (dataframeToImpute==0).mean()
+    potential_predictors = dataframeToImpute.columns #geneDropoutRate.index[geneDropoutRate < predictorDropoutLimit]
 
     print("Keeping {} potential predictors.".format(len(potential_predictors)))
     
@@ -76,17 +76,17 @@ def get_input_genes(
     return in_out_genes
 
 
-def _get_target_genes(gene_counts, minExpressionLevel, maxNumOfGenes):
+def _get_target_genes(geneQuantiles, minExpressionLevel, maxNumOfGenes):
     if maxNumOfGenes == "auto":
-        targetGenes = gene_counts[gene_counts > minExpressionLevel].index
+        targetGenes = geneQuantiles[geneQuantiles > minExpressionLevel].index
         print("Minimum gene count for imputation set to {}, leaving {} genes for imputation."
               .format(minExpressionLevel,len(targetGenes)))
 
     else:
         if maxNumOfGenes is None:
-            maxNumOfGenes = len(gene_counts)
-        maxNumOfGenes = min(maxNumOfGenes, len(gene_counts))
-        targetGenes = gene_counts.sort_values(ascending=False).index[:maxNumOfGenes]
+            maxNumOfGenes = len(geneQuantiles)
+        maxNumOfGenes = min(maxNumOfGenes, len(geneQuantiles))
+        targetGenes = geneQuantiles.sort_values(ascending=False).index[:maxNumOfGenes]
         print("Gene prediction limit set to {} genes".format(len(targetGenes)))
 
     return targetGenes.tolist()

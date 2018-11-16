@@ -56,15 +56,15 @@ class MultiNet(object):
     def __init__(
         self,
         n_cores=4,
-        predictorDropoutLimit=.9,
-        minExpressionLevel=100,
+        # predictorDropoutLimit=.9,
+        minExpressionLevel=5,
         normalization="log_or_exp",
         runDir=os.path.join(tempfile.gettempdir(), "run"),
         seed=0,
         **NN_params
     ):
         self._maxcores = n_cores
-        self.predictorDropoutLimit = predictorDropoutLimit
+        # self.predictorDropoutLimit = predictorDropoutLimit
         self.inOutGenes = None
         self.norm = Normalizer.fromName(normalization)
         self.runDir = runDir
@@ -121,10 +121,11 @@ class MultiNet(object):
         subnetOutputColumns = self.NN_params["dims"][1]
         
         # Choose genes to impute
-        geneCounts = inputExpressionMatrixDF.sum().sort_values(ascending=False)
+        # geneCounts = inputExpressionMatrixDF.sum().sort_values(ascending=False)
+        geneQuantiles = inputExpressionMatrixDF.quantile(.99).sort_values(ascending=False)
 
         if targetGeneNames is None:
-            targetGeneNames = _get_target_genes(geneCounts, minExpressionLevel = self._minExpressionLevel, maxNumOfGenes = NN_lim)
+            targetGeneNames = _get_target_genes(geneQuantiles, minExpressionLevel = self._minExpressionLevel, maxNumOfGenes = NN_lim)
 
         df_to_impute = inputExpressionMatrixDF[targetGeneNames]
 
@@ -166,7 +167,7 @@ class MultiNet(object):
                 self.NN_params["dims"],
                 distanceMatrix=corrMatrix,
                 targets=subGenelists,
-                predictorDropoutLimit=self.predictorDropoutLimit
+                #predictorDropoutLimit=self.predictorDropoutLimit
             )
 
         # ------------------------# Subsets for fitting #------------------------#
