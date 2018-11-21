@@ -194,7 +194,7 @@ class MultiNet(object):
 
         # -------------------# Preprocessing (if any) #--------------------#
 
-        normalizer = self.Normalizer.fromName(self.norm)
+        normalizer = Normalizer.fromName(self.norm)
 
         df_to_impute = normalizer.fit(df_to_impute).transform(df_to_impute)
 
@@ -251,9 +251,9 @@ class MultiNet(object):
 
         Y_imputed = pd.concat(output_dicts, axis=1)
         Y_imputed = Y_imputed.groupby(by=Y_imputed.columns,axis=1).mean()
-        Y_imputed = self.norm.transform(Y_imputed,rev=True)
+        Y_imputed = normalizer.transform(Y_imputed,rev=True)
         
-        Y_not_imputed = df.drop(Y_imputed.columns)
+        Y_not_imputed = df.drop(Y_imputed.columns,axis=1)
         
         Y_total = pd.concat([Y_imputed, Y_not_imputed], axis=1)[df.columns]
         
