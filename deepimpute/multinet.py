@@ -56,7 +56,6 @@ class MultiNet(object):
     def __init__(
         self,
         n_cores=4,
-        # predictorDropoutLimit=.9,
         minExpressionLevel=5,
         normalization="log_or_exp",
         runDir=os.path.join(tempfile.gettempdir(), "run"),
@@ -64,9 +63,8 @@ class MultiNet(object):
         **NN_params
     ):
         self._maxcores = n_cores
-        # self.predictorDropoutLimit = predictorDropoutLimit
         self.inOutGenes = None
-        self.norm = Normalizer.fromName(normalization)
+        self.norm = normalization
         self.runDir = runDir
         self.seed = seed
 
@@ -148,7 +146,7 @@ class MultiNet(object):
             selectedGenes = np.reshape(subGenelists, -1)
             leftOutGenes = np.setdiff1d(targetGeneNames, selectedGenes)
 
-            fill_genes = np.random.choice(selectedGenes,
+            fill_genes = np.random.choice(targetGeneNames,
                                           subnetOutputColumns-len(leftOutGenes),
                                           replace=False)
 
@@ -196,7 +194,9 @@ class MultiNet(object):
 
         # -------------------# Preprocessing (if any) #--------------------#
 
-        df_to_impute = self.norm.fit(df_to_impute).transform(df_to_impute)
+        normalizer = self.Normalizer.fromName(self.norm)
+
+        df_to_impute = normalizer.fit(df_to_impute).transform(df_to_impute)
 
         # -------------------# Share matrix between subprocesses #--------------------#
 
@@ -233,34 +233,36 @@ class MultiNet(object):
         pool.join()
         return output_dicts
 
-    def predict(self, data, imputed_only=False, restore_pos_values=False):
+    def predict(self, data, imputed_only=False, policy=None):
         print("Starting prediction")
         df = pd.DataFrame(data)
+        normalizer = Normalizer.fromName(self.norm)
 
         """ Create memory chunk and put the matrix in it """
         idx, cols = df.index, df.columns
-        df_norm = self.norm.fit(df).transform(df).values.flatten()
+        df_norm = normalizer.fit(df).transform(df)
 
         """ Parallelize process with shared array """
         childJobs = [
             ((12, 15), net.__dict__, (idx, cols), "predict") for net in self.networks
         ]
 
-        output_dicts = self._runOnMultipleCores(self.maxcores, df_norm, childJobs)
+        output_dicts = self._runOnMultipleCores(self.maxcores, df_norm.values.flatten(), childJobs)
 
         Y_imputed = pd.concat(output_dicts, axis=1)
         Y_imputed = Y_imputed.groupby(by=Y_imputed.columns,axis=1).mean()
+        Y_imputed = self.norm.transform(Y_imputed,rev=True)
         
-        Y_not_imputed = df[
-            [gene for gene in df.columns if gene not in Y_imputed.columns]
-        ]
-        Y_total = self.norm.transform(
-            pd.concat([Y_imputed, Y_not_imputed], axis=1)[df.columns], rev=True
-        )
-        if restore_pos_values:
+        Y_not_imputed = df.drop(Y_imputed.columns)
+        
+        Y_total = pd.concat([Y_imputed, Y_not_imputed], axis=1)[df.columns]
+        
+        if policy == "restore":
             Y_total = Y_total.mask(df > 0, df)
-        else:
+        elif policy == "max":
             Y_total = pd.concat([Y_total,df]).max(level=0)
+        else:
+            Y_total = Y_total.mask(Y_total==0,df)
             
         if imputed_only:
             Y_total = Y_total[Y_imputed.columns]
