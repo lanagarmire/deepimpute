@@ -1,279 +1,268 @@
 import os
-import numpy as np
+from itertools import chain
 import pandas as pd
-import binascii
-import warnings
-import tempfile
-from math import ceil
-from multiprocessing import cpu_count, sharedctypes
+import numpy as np
+import matplotlib.pyplot as plt
 from multiprocessing.pool import Pool
-from sklearn.metrics import r2_score
+from sklearn.metrics import pairwise_distances
 
 from deepimpute.net import Net
 from deepimpute.normalizer import Normalizer
-from deepimpute.util import get_input_genes, _get_target_genes
-from deepimpute.util import score_model
 
-
-def _newCoreInitializer(arr_to_populate):
-    global sharedArray
-    sharedArray = arr_to_populate
-
-
-def _trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=False):
-    features, targets = in_out
-
-    net = Net(**NN_param_i)
-    net.fit(data_i, targetGenes=targets, predictorGenes=features, labels=labels, retrieve_training=retrieve_training)
-
-    # retrieve the array
-    params = list(NN_param_i.keys()) + ["targetGenes", "NNid", "predictorGenes"]
-    args2return = [(attr, getattr(net, attr)) for attr in params]
-    return {k: v if k[0] != "_" else (k[1:], v) for k, v in args2return}
-
-
-def _predictNet(data_i, NN_param_i, labels):
-    net = Net(**NN_param_i)
-    data_i_ok = pd.DataFrame(
-        np.reshape(data_i, list(map(len, labels))), index=labels[0], columns=labels[1]
+def fit_parallel(args):
+    NN_parameters,output,X,Y = args
+    net = Net(dims=[X.shape[1],Y.shape[1]],
+              outputdir=output,
+              **NN_parameters
     )
-    return net.predict(data_i_ok)
+    net.fit(X,Y)
+    print("Training finished. Writing to {}".format(output))
 
-def trainOrPredict(args):
-    if len(args) == 5:
-        in_out, NN_param_i, labels, mode, retrieve_training = args
-    else:
-        in_out, NN_param_i, labels, mode = args
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        data_i = np.ctypeslib.as_array(sharedArray)
-    if mode == "predict":
-        return _predictNet(data_i, NN_param_i, labels)
-    return _trainNet(in_out, NN_param_i, data_i, labels, retrieve_training=retrieve_training)
+class MultiNet:
 
-class MultiNet(object):
-
-    def __init__(
-        self,
-        n_cores=4,
-        minExpressionLevel=5,
-        normalization="log_or_exp",
-        runDir=os.path.join(tempfile.gettempdir(), "run"),
-        seed=0,
-        **NN_params
+    def __init__(self,
+                 learning_rate=1e-4,
+                 batch_size=64,
+                 n_cores=20,
+                 loss="wMSE",
+                 normalization="log_or_exp",
+                 output_prefix="/tmp/multinet",
+                 sub_outputdim=512,
+                 seed=1234
     ):
-        self._maxcores = n_cores
-        self.inOutGenes = None
-        self.norm = normalization
-        self.runDir = runDir
-        self.seed = seed
+        self.NN_parameters = {"learning_rate": learning_rate,
+                              "batch_size": batch_size,
+                              "loss": loss,
+                              }
+        self.normalization = normalization
+        self.sub_outputdim = sub_outputdim
+        self.output_prefix = output_prefix
+        self.outputdirs = []
+        self.cores = n_cores
 
-        NN_params["seed"] = seed
-        if "dims" not in NN_params.keys():
-            NN_params["dims"] = [20, 512]
-        self.NN_params = NN_params
-        self.trainingParams = None
-        self._minExpressionLevel = minExpressionLevel
-        
-    @property
-    def maxcores(self):
-        if self._maxcores == "all":
-            return cpu_count()
-        return self._maxcores
+        if seed is not None:
+            np.random.seed(seed)
 
-    @maxcores.setter
-    def maxcores(self, value):
-        self._maxcores = value
-
-    def get_params(self, deep=False):
-        return self.__dict__
-
-    def _setIDandRundir(self, data):
-        # set runID
-        runID = binascii.b2a_hex(os.urandom(5))
-        if type(runID) is bytes:
-            runID = runID.decode()
-        self.NN_params["runDir"] = os.path.join(self.runDir, str(runID))
-
-    def _getRunsAndCores(self, geneCount):
-        n_runs = int(ceil(1. * geneCount / self.NN_params["dims"][1]))
-        n_cores = min(self.maxcores, n_runs)
-        self.NN_params["n_cores"] = max(1, int(self.maxcores / n_cores))
-        return n_runs, n_cores
-
-    def fit(self, data, NN_lim="auto", cell_subset=None, NN_genes=None, retrieve_training=False):
-        np.random.seed(seed=self.seed)
-        targetGeneNames = NN_genes
-        
-        inputExpressionMatrixDF = pd.DataFrame(data)
-        print("Input dataset is {} genes (columns) and {} cells (rows)".format(inputExpressionMatrixDF.shape[1], inputExpressionMatrixDF.shape[0]))
-        print("First 3 rows and columns:")
-        print(inputExpressionMatrixDF.iloc[0:3, 0:3])
-
-        self._setIDandRundir(inputExpressionMatrixDF)
-
-        # Change the output dimension if the data has too few genes
-        if inputExpressionMatrixDF.shape[1] < self.NN_params["dims"][1]:
-            self.NN_params["dims"][1] = inputExpressionMatrixDF.shape[1]
-
-        subnetOutputColumns = self.NN_params["dims"][1]
-        
-        # Choose genes to impute
-        # geneCounts = inputExpressionMatrixDF.sum().sort_values(ascending=False)
-        geneQuantiles = inputExpressionMatrixDF.quantile(.99).sort_values(ascending=False)
-
-        if targetGeneNames is None:
-            targetGeneNames = _get_target_genes(geneQuantiles, minExpressionLevel = self._minExpressionLevel, maxNumOfGenes = NN_lim)
-
-        df_to_impute = inputExpressionMatrixDF[targetGeneNames]
-
-        numberOfTargetGenes = len(targetGeneNames)
-        if (numberOfTargetGenes == 0):
-            raise Exception("Unable to compute any target genes. Is your data log transformed? Perhaps try with a lower minExpressionLevel.")
-
-        n_runs, n_cores = self._getRunsAndCores(numberOfTargetGenes)
-
-        # ------------------------# Subnetworks #------------------------#
-
-        n_choose = int(numberOfTargetGenes / subnetOutputColumns)
-
-        subGenelists = np.random.choice(
-            targetGeneNames, [n_choose, subnetOutputColumns], replace=False
-        ).tolist()
-        
-        if n_choose < n_runs:
-            # Special case: for the last run, the output layer will have previous targets
-            selectedGenes = np.reshape(subGenelists, -1)
-            leftOutGenes = np.setdiff1d(targetGeneNames, selectedGenes)
-
-            fill_genes = np.random.choice(targetGeneNames,
-                                          subnetOutputColumns-len(leftOutGenes),
-                                          replace=False)
-
-            subGenelists.append(np.concatenate([leftOutGenes,fill_genes]).tolist())
-
-        # ------------------------# Extracting input genes #------------------------#
-
-        corrMatrix = 1 - np.abs(
-            pd.DataFrame(np.corrcoef(df_to_impute.T), index=targetGeneNames, columns=targetGeneNames)
+    def initSubNet(self,dims,output):
+        net = Net(dims=dims,
+                  learning_rate=self.lr,
+                  batch_size=self.bs,
+                  loss=self.loss,
+                  outputdir=output
         )
+        return net
         
-        if self.inOutGenes is None:
+    def fit(self,
+            raw,
+            cell_subset=1,
+            NN_lim=None
+    ):
+        
+        if cell_subset != 1:
+            if cell_subset < 1:
+                raw = raw.sample(frac=cell_subset)
+            else:
+                raw = raw.sample(cell_subset)
+        
+        data = self.filter_data(raw, NN_lim=NN_lim)
+        self.setTargets(data)
+        self.setPredictors(data)
 
-            self.inOutGenes = get_input_genes(
-                df_to_impute,
-                self.NN_params["dims"],
-                distanceMatrix=corrMatrix,
-                targets=subGenelists,
-                #predictorDropoutLimit=self.predictorDropoutLimit
-            )
+        normalizer = Normalizer.fromName(self.normalization).fit(data)
+        norm_data = normalizer.transform(data)
 
-        # ------------------------# Subsets for fitting #------------------------#
+        self.outputdirs = ["{}/NN_{}".format(self.output_prefix,i)
+                           for i in range(len(self.targets))]
 
-        n_cells = df_to_impute.shape[0]
+        inputs = [(self.NN_parameters,output,norm_data[predictors],norm_data[targets])
+                  for (output,predictors,targets) in zip(self.outputdirs,
+                                                         self.predictors,
+                                                         self.targets)]
 
-        if type(cell_subset) is float or cell_subset == 1:
-            n_cells = int(cell_subset * n_cells)
-
-        elif type(cell_subset) is int:
-            n_cells = cell_subset
-
-        self.trainCells = df_to_impute.sample(n_cells, replace=False).index
-
-        print(
-            "Starting training with {} cells ({:.1%}) on {} threads ({} cores/thread).".format(
-                n_cells,
-                1. * n_cells / df_to_impute.shape[0],
-                n_cores,
-                self.NN_params["n_cores"],
-            )
-        )
-
-        if self.trainingParams is None:
-            self.trainingParams = [self.NN_params]*len(self.inOutGenes)
-
-        # -------------------# Preprocessing (if any) #--------------------#
-
-        normalizer = Normalizer.fromName(self.norm)
-
-        df_to_impute = normalizer.fit(df_to_impute).transform(df_to_impute)
-
-        # -------------------# Share matrix between subprocesses #--------------------#
-
-        """ Create memory chunk and put the matrix in it """
-        idx, cols = self.trainCells, df_to_impute.columns
-        trainData = df_to_impute.loc[self.trainCells, :].values
-
-        """ Parallelize process with shared array """
-        childJobs = [
-            (in_out, trainingParams, (idx, cols), "train", retrieve_training)
-            for in_out,trainingParams in zip(self.inOutGenes,self.trainingParams)
-        ]
-
-        self.trainingParams = self._runOnMultipleCores(n_cores, trainData.flatten(), childJobs)
-
-        self.networks = []
-        for dictionnary in self.trainingParams:
-            self.networks.append(Net(**dictionnary))
-
-        print('---- Hyperparameters summary ----')
-        self.networks[0].display_params()
+        pool = Pool(self.cores)
+        pool.map(fit_parallel,inputs)
+        pool.close()
 
         return self
 
-    def _runOnMultipleCores(self, cores, data, childJobs):
-        sharedArray = sharedctypes.RawArray("d", data)
+    def predict(self,
+                raw,
+                imputed_only=False,
+                restore_pos_values=None,
+                policy="max"):
 
-        pool = Pool(
-            processes=cores, initializer=_newCoreInitializer, initargs=(sharedArray,)
-        )
+        normalizer = Normalizer.fromName(self.normalization).fit(raw)
+        norm_raw = normalizer.transform(raw)
         
-        output_dicts = pool.map(trainOrPredict, childJobs)
-        pool.close()
-        pool.join()
-        return output_dicts
+        predicted = []
 
-    def predict(self, data, imputed_only=False, policy=None):
-        print("Starting prediction")
-        df = pd.DataFrame(data)
-        normalizer = Normalizer.fromName(self.norm)
+        for model_dir,predictors,targets in zip(self.outputdirs,self.predictors,self.targets):
+            net = Net(dims=[len(predictors),len(targets)],
+                      outputdir=model_dir,
+                      **self.NN_parameters)
+            predicted.append(net.predict(norm_raw.loc[:,predictors].values))
 
-        """ Create memory chunk and put the matrix in it """
-        idx, cols = df.index, df.columns
-        df_norm = normalizer.fit(df).transform(df)
-
-        """ Parallelize process with shared array """
-        childJobs = [
-            ((12, 15), net.__dict__, (idx, cols), "predict") for net in self.networks
-        ]
-
-        output_dicts = self._runOnMultipleCores(self.maxcores, df_norm.values.flatten(), childJobs)
-
-        Y_imputed = pd.concat(output_dicts, axis=1)
-        Y_imputed = Y_imputed.groupby(by=Y_imputed.columns,axis=1).mean()
-        Y_imputed = normalizer.transform(Y_imputed,rev=True)
+        predicted = pd.DataFrame(np.hstack(predicted),
+                                 index=raw.index,
+                                 columns=list(chain(*self.targets)))
+                                 # columns=self.targets.flatten())
+        predicted = predicted.groupby(by=predicted.columns,axis=1).mean()
         
-        Y_not_imputed = df.drop(Y_imputed.columns,axis=1)
+        not_predicted = norm_raw.drop(list(chain(*self.targets)),axis=1)
+
+        imputed = pd.concat([predicted,not_predicted],axis=1).loc[raw.index,raw.columns]
+
+        # To prevent overflow
+        imputed = imputed.mask( (imputed>norm_raw.values.max()) | imputed.isnull(), norm_raw)
+        # Convert back to counts
+        imputed = normalizer.transform(imputed,rev=True)        
         
-        Y_total = pd.concat([Y_imputed, Y_not_imputed], axis=1)[df.columns]
-        
-        if policy == "restore":
-            Y_total = Y_total.mask(df > 0, df)
+        if policy == "restore" or restore_pos_values==True:
+            print("Filling zeros")
+            imputed = imputed.mask(raw>0,raw)
         elif policy == "max":
-            Y_total = pd.concat([Y_total,df]).max(level=0)
-        else:
-            Y_total = Y_total.mask(Y_total==0,df)
-            
+            print("Imputing data with 'max' policy")
+            imputed = imputed.mask(raw>imputed,raw)
+
         if imputed_only:
-            Y_total = Y_total[Y_imputed.columns]
-
-        Y_total[np.isinf(Y_total) | np.isnan(Y_total)] = 1e4
-
-        if type(data) == type(pd.DataFrame()):
-            return Y_total
+            return imputed.loc[:,predicted.columns]
         else:
-            return Y_total.values
+            return imputed
+        
+    def filter_data(self,data,
+                    min_q99=10,
+                    # min_coverage=100, noise_level=5,
+                    NN_lim=None
+    ):
+        if NN_lim is None:
+            # gene_filter = ((data.std()**2 / (1+data.mean()))
+            #                .sort_values(ascending=False)
+            #                .index[:4096])
+            # gene_filter = data.columns[ (data>noise_level).sum()>min_coverage ]
+            gene_filter = data.columns[data.quantile(.99)>min_q99]
+        else:
+            # gene_filter = (data>noise_level).sum().sort_values(ascending=False).index[:NN_lim]
+            gene_filter = data.quantile(.99).sort_values(ascending=False).index[:NN_lim]
+        data = data.loc[:,gene_filter]
 
-    def score(self, data, metric=r2_score):
-        imputedGenes = list(zip(*[net.targetGenes for net in self.networks]))
-        return score_model(self, pd.DataFrame(data), metric=r2_score, cols=imputedGenes)
+        print("{} genes selected for imputation".format(data.shape[1]))
+        return data
+
+    def setTargets(self,data):
+        
+        n_subsets = int(data.shape[1]/self.sub_outputdim)
+        
+        self.targets = np.random.choice(data.columns,
+                                        [n_subsets,self.sub_outputdim],
+                                        replace=False)
+        
+        leftout_genes = np.setdiff1d(data.columns,self.targets.flatten())
+
+        if len(leftout_genes) > 0:
+            fill_genes = np.random.choice(data.columns,
+                                          self.sub_outputdim-len(leftout_genes),
+                                          replace=False)
+            last_batch = np.concatenate([leftout_genes,fill_genes])
+            self.targets = np.vstack([self.targets,last_batch])
+            # self.targets = self.targets.tolist() + [leftout_genes.tolist()]
+
+    def _setPredictors(self,data,ntop=20):
+
+        mask = (data==0).astype(float).T
+        dists = 1 / (1+np.dot(mask.values,data.values))
+        
+        dist_matrix = pd.DataFrame(dists,
+                                   index=data.columns,
+                                   columns=data.columns)
+        self.predictors = []
+        for i,targets in enumerate(self.targets):
+            subMatrix = dist_matrix.loc[targets]
+            sorted_idx = np.argsort(-subMatrix.values,axis=1)
+            predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
+
+            print("{} predictors selected for model {}"
+                  .format(len(np.unique(predictors)),i))
+            self.predictors.append(np.unique(predictors))
+
+    def setPredictors(self,data,ntop=20):
+        potential_predictors = data.columns
+
+        covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(data.T)),
+                                         index=data.columns,
+                                         columns=data.columns)[potential_predictors]
+        self.predictors = []
+        for i,targets in enumerate(self.targets):
+            subMatrix = covariance_matrix.loc[targets].drop(targets,axis=1)
+            sorted_idx = np.argsort(-subMatrix.values,axis=1)
+            predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
+            # predictors = subMatrix.columns
+            print("{} predictors selected for model {}"
+                  .format(len(np.unique(predictors)),i))
+            predictors = subMatrix.columns
+            self.predictors.append(np.unique(predictors))
+
+if __name__ == '__main__':
+
+    from deepimpute.multinet import MultiNet as MN
+    np.random.seed(1234)
+
+    # Prepare data
+    raw = pd.read_csv('jurkat_dp0.05_2k-genes.csv',index_col=0).sample(frac=1).T
+
+    # New implementation of DeepImpute
+    model = MultiNet()
+    print("Starting multinet")
+    model.fit(raw)
+    targets = np.unique(model.targets.flatten())
+    pred = model.predict(raw)[targets].values
+
+    raw = raw.loc[:,targets]
+    
+    # Deepimpute
+    if not os.path.exists('dp_prediction.csv'):
+        model_DI = MN(n_cores=20,loss='wMSE')
+        model_DI.fit(raw,NN_lim=2000)
+        pred_DI = model_DI.predict(raw,restore_pos_values=False)
+        pred_DI.to_csv('dp_prediction.csv')
+    else:
+        pred_DI = pd.read_csv('dp_prediction.csv',index_col=0)
+
+    pred_DI = pred_DI.loc[raw.index,raw.columns].values
+    
+    # Assessment
+    
+    truth = pd.read_csv('jurkat_filt-95.csv',index_col=0).loc[raw.index,raw.columns]
+    mask = truth != raw
+
+    y_true = np.log1p(truth.values.flatten())
+    y_hat = np.log1p(pred.flatten())
+    y_hat_DI = np.log1p(pred_DI.flatten())
+
+    indices = np.random.choice(len(y_true),100000,replace=False)
+    y_true = [y_true[i] for i in indices]
+    y_hat = [y_hat[i] for i in indices]
+    y_hat_DI = [y_hat_DI[i] for i in indices]
+
+    y_true_masked = np.log1p(truth.values[mask.values])
+    y_hat_masked = np.log1p(pred[mask.values])
+    y_hat_DI_masked = np.log1p(pred_DI[mask.values])
+
+    lims = [0,7]
+    
+    fig,ax = plt.subplots(2,2)
+    ax[0,0].scatter(y_true,y_hat,s=1)
+    ax[0,0].plot(lims,lims,'r-.')
+    ax[0,1].scatter(y_true_masked,y_hat_masked,s=1)    
+    ax[0,1].plot(lims,lims,'r-.')
+
+    ax[1,0].scatter(y_true,y_hat_DI,s=1)
+    ax[1,0].plot(lims,lims,'r-.')
+    ax[1,1].scatter(y_true_masked,y_hat_DI_masked,s=1)    
+    ax[1,1].plot(lims,lims,'r-.')
+
+    plt.show()
+
+
+
+
+    

@@ -6,7 +6,7 @@ def deepImpute(
     data,
     NN_lim="auto",
     n_cores=10,
-    cell_subset=None,
+    cell_subset=1,
     imputed_only=False,
     restore_pos_values=True,
     seed=0,
