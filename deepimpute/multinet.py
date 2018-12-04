@@ -63,8 +63,12 @@ class MultiNet:
                 raw = raw.sample(frac=cell_subset)
             else:
                 raw = raw.sample(cell_subset)
+
+        # gene_metrics = raw.quantile(.99) ; threshold = 5 # Gene criteria for filtering
+        gene_metrics = raw.std() ; threshold = 1
+        genesToImpute = self.filter_genes(gene_metrics, threshold, NN_lim=NN_lim)
         
-        data = self.filter_data(raw, NN_lim=NN_lim)
+        data = raw.loc[:,genesToImpute]
         self.setTargets(data)
         self.setPredictors(data)
 
@@ -88,7 +92,7 @@ class MultiNet:
     def predict(self,
                 raw,
                 imputed_only=False,
-                restore_pos_values=None,
+                restore_pos_values=False,
                 policy="max"):
 
         normalizer = Normalizer.fromName(self.normalization).fit(raw)
@@ -117,7 +121,7 @@ class MultiNet:
         # Convert back to counts
         imputed = normalizer.transform(imputed,rev=True)        
         
-        if policy == "restore" or restore_pos_values==True:
+        if policy == "restore" or restore_pos_values:
             print("Filling zeros")
             imputed = imputed.mask(raw>0,raw)
         elif policy == "max":
@@ -129,24 +133,20 @@ class MultiNet:
         else:
             return imputed
         
-    def filter_data(self,data,
-                    min_q99=10,
-                    # min_coverage=100, noise_level=5,
+    def filter_genes(self,
+                    gene_metric,
+                    threshold,
                     NN_lim=None
     ):
         if NN_lim is None:
-            # gene_filter = ((data.std()**2 / (1+data.mean()))
-            #                .sort_values(ascending=False)
-            #                .index[:4096])
-            # gene_filter = data.columns[ (data>noise_level).sum()>min_coverage ]
-            gene_filter = data.columns[data.quantile(.99)>min_q99]
+            gene_filtered = gene_metric.index[gene_metric>threshold]
         else:
-            # gene_filter = (data>noise_level).sum().sort_values(ascending=False).index[:NN_lim]
-            gene_filter = data.quantile(.99).sort_values(ascending=False).index[:NN_lim]
-        data = data.loc[:,gene_filter]
+            gene_filtered = gene_metric.sort_values(ascending=False).index[:NN_lim]
 
-        print("{} genes selected for imputation".format(data.shape[1]))
-        return data
+        print("{} genes selected for imputation".format(len(gene_filtered)))
+
+        return gene_filtered
+
 
     def setTargets(self,data):
         
@@ -166,23 +166,23 @@ class MultiNet:
             self.targets = np.vstack([self.targets,last_batch])
             # self.targets = self.targets.tolist() + [leftout_genes.tolist()]
 
-    def _setPredictors(self,data,ntop=20):
+    # def _setPredictors(self,data,ntop=20):
 
-        mask = (data==0).astype(float).T
-        dists = 1 / (1+np.dot(mask.values,data.values))
+    #     mask = (data==0).astype(float).T
+    #     dists = 1 / (1+np.dot(mask.values,data.values))
         
-        dist_matrix = pd.DataFrame(dists,
-                                   index=data.columns,
-                                   columns=data.columns)
-        self.predictors = []
-        for i,targets in enumerate(self.targets):
-            subMatrix = dist_matrix.loc[targets]
-            sorted_idx = np.argsort(-subMatrix.values,axis=1)
-            predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
+    #     dist_matrix = pd.DataFrame(dists,
+    #                                index=data.columns,
+    #                                columns=data.columns)
+    #     self.predictors = []
+    #     for i,targets in enumerate(self.targets):
+    #         subMatrix = dist_matrix.loc[targets]
+    #         sorted_idx = np.argsort(-subMatrix.values,axis=1)
+    #         predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
 
-            print("{} predictors selected for model {}"
-                  .format(len(np.unique(predictors)),i))
-            self.predictors.append(np.unique(predictors))
+    #         print("{} predictors selected for model {}"
+    #               .format(len(np.unique(predictors)),i))
+    #         self.predictors.append(np.unique(predictors))
 
     def setPredictors(self,data,ntop=20):
         potential_predictors = data.columns
@@ -198,7 +198,9 @@ class MultiNet:
             # predictors = subMatrix.columns
             print("{} predictors selected for model {}"
                   .format(len(np.unique(predictors)),i))
-            predictors = subMatrix.columns
+            if len(predictors)==0:
+                import ipdb;ipdb.set_trace()
+
             self.predictors.append(np.unique(predictors))
 
 if __name__ == '__main__':
