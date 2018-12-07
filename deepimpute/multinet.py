@@ -3,11 +3,14 @@ from itertools import chain
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+
+import multiprocessing
 from multiprocessing.pool import Pool
-from sklearn.metrics import pairwise_distances
 
 from deepimpute.net import Net
 from deepimpute.normalizer import Normalizer
+
+multiprocessing.set_start_method('spawn', force=True)
 
 def fit_parallel(args):
     NN_parameters,output,X,Y = args
@@ -55,7 +58,10 @@ class MultiNet:
     def fit(self,
             raw,
             cell_subset=1,
-            NN_lim=None
+            NN_lim=None,
+            npred=1000,
+            ntop=20,
+            gene_metrics=None
     ):
         
         if cell_subset != 1:
@@ -64,16 +70,19 @@ class MultiNet:
             else:
                 raw = raw.sample(cell_subset)
 
-        # gene_metrics = raw.quantile(.99) ; threshold = 5 # Gene criteria for filtering
-        gene_metrics = raw.std() ; threshold = 1
+        if gene_metrics is None:
+            # gene_metrics = raw.quantile(.99) ; threshold = 5 # Gene criteria for filtering
+            gene_metrics = raw[raw>0].std()
+
+        threshold = 1
+     
         genesToImpute = self.filter_genes(gene_metrics, threshold, NN_lim=NN_lim)
         
-        data = raw.loc[:,genesToImpute]
-        self.setTargets(data)
-        self.setPredictors(data)
+        self.setTargets(raw.loc[:,genesToImpute])
+        self.setPredictors(raw.loc[:,genesToImpute],npred=npred,ntop=ntop)
 
-        normalizer = Normalizer.fromName(self.normalization).fit(data)
-        norm_data = normalizer.transform(data)
+        normalizer = Normalizer.fromName(self.normalization).fit(raw)
+        norm_data = normalizer.transform(raw)
 
         self.outputdirs = ["{}/NN_{}".format(self.output_prefix,i)
                            for i in range(len(self.targets))]
@@ -93,7 +102,7 @@ class MultiNet:
                 raw,
                 imputed_only=False,
                 restore_pos_values=False,
-                policy="max"):
+                policy="restore"):
 
         normalizer = Normalizer.fromName(self.normalization).fit(raw)
         norm_raw = normalizer.transform(raw)
@@ -109,7 +118,7 @@ class MultiNet:
         predicted = pd.DataFrame(np.hstack(predicted),
                                  index=raw.index,
                                  columns=list(chain(*self.targets)))
-                                 # columns=self.targets.flatten())
+
         predicted = predicted.groupby(by=predicted.columns,axis=1).mean()
         
         not_predicted = norm_raw.drop(list(chain(*self.targets)),axis=1)
@@ -139,10 +148,12 @@ class MultiNet:
                     NN_lim=None
     ):
         if NN_lim is None:
-            gene_filtered = gene_metric.index[gene_metric>threshold]
+            gene_filtered = gene_metric.index[gene_metric > threshold]
         else:
             gene_filtered = gene_metric.sort_values(ascending=False).index[:NN_lim]
 
+        # if len(gene_filtered)>10000:
+        #     gene_filtered = gene_filtered[:10000]
         print("{} genes selected for imputation".format(len(gene_filtered)))
 
         return gene_filtered
@@ -184,22 +195,20 @@ class MultiNet:
     #               .format(len(np.unique(predictors)),i))
     #         self.predictors.append(np.unique(predictors))
 
-    def setPredictors(self,data,ntop=20):
-        potential_predictors = data.columns
-
-        covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(data.T)),
-                                         index=data.columns,
-                                         columns=data.columns)[potential_predictors]
+    def setPredictors(self,raw,ntop=20,npred=2000):
+        potential_pred = ((raw.std() / (1+raw.mean()))
+                          .sort_values(ascending=False)
+                          .index[:npred]
+        )
+        covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(raw.T)),
+                                         index=raw.columns,
+                                         columns=raw.columns).fillna(0)[potential_pred]
         self.predictors = []
         for i,targets in enumerate(self.targets):
-            subMatrix = covariance_matrix.loc[targets].drop(targets,axis=1)
+            subMatrix = covariance_matrix.loc[targets].drop(
+                np.intersect1d(targets,potential_pred),axis=1)
             sorted_idx = np.argsort(-subMatrix.values,axis=1)
             predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
-            # predictors = subMatrix.columns
-            print("{} predictors selected for model {}"
-                  .format(len(np.unique(predictors)),i))
-            if len(predictors)==0:
-                import ipdb;ipdb.set_trace()
 
             self.predictors.append(np.unique(predictors))
 

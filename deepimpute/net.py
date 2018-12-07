@@ -12,21 +12,10 @@ import keras.losses
 import tensorflow as tf
 
 def wMSE(y_true,y_pred):
-    weights = tf.cast(y_true>0,tf.float32)
-    # weights = y_true
+    # weights = tf.cast(y_true>0,tf.float32)
+    weights = y_true
     # return tf.reduce_mean(keras.losses.poisson(y_true, y_pred * weights))
     return tf.reduce_mean(weights*tf.square(y_true-y_pred))
-
-# class wMSELayer(Layer):
-    
-#     def __init__(self, *args, **kwargs):
-#         self.is_placeholder = True
-#         super(wMSELayer, self).__init__(*args, **kwargs)
-
-#     def call(self, inputs):
-#         self.add_loss(wMSE(*inputs),inputs=inputs)
-
-#         return inputs[1]
 
 class Net:
     def __init__(self,
@@ -134,11 +123,8 @@ class Net:
     
     def fit(self,X,Y):
 
-        cell_filt = Y.index[ (Y>0).sum(axis=1) > 0.01*Y.shape[0] ]
+        cell_filt = Y.index 
 
-        if len(cell_filt) < X.shape[0]:
-            print("Using {}/{} cells for training".format(len(cell_filt),X.shape[0]))
-        
         # Build network
         model = self.build()
 
