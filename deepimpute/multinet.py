@@ -233,7 +233,7 @@ class MultiNet(object):
         pool.join()
         return output_dicts
 
-    def predict(self, data, imputed_only=False, policy=None):
+    def predict(self, data, imputed_only=False, policy="restore"):
         print("Starting prediction")
         df = pd.DataFrame(data)
         normalizer = Normalizer.fromName(self.norm)
