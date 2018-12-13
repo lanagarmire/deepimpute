@@ -5,17 +5,16 @@ from deepimpute.multinet import MultiNet
 def deepImpute(
     data,
     NN_lim="auto",
-    n_cores=10,
     cell_subset=1,
     imputed_only=False,
-    restore_pos_values=True,
-    seed=0,
+    policy="restore",
+    threshold=0.01,
     **NN_params
 ):
+    multi = MultiNet(**NN_params)
+    multi.fit(data, NN_lim=NN_lim, cell_subset=cell_subset, minExpressionLevel=threshold)
+    return multi.predict(data, imputed_only=imputed_only, policy=policy)
 
-    multi = MultiNet(n_cores=n_cores, seed=seed, **NN_params)
-    multi.fit(data, NN_lim=NN_lim, cell_subset=cell_subset)
-    return multi.predict(data, imputed_only=imputed_only,restore_pos_values=restore_pos_values)
 
 if __name__ == "__main__":
     import argparse
@@ -46,6 +45,12 @@ if __name__ == "__main__":
         help="Genes to impute (e.g. first 2000 genes). Default: auto",
     )
     parser.add_argument(
+        "--threshold",
+        type=str,
+        default="0.01",
+        help="Threshold for genes to impute based on their dropout rate. Used if --limit is set to 'auto'. Default: 0.01",
+    )    
+    parser.add_argument(
         "--subset",
         type=float,
         default=1,
@@ -56,7 +61,7 @@ if __name__ == "__main__":
         "--learning-rate",
         type=float,
         default=0.0005,
-        help="Learning rate. Default: 0.0005"
+        help="Learning rate. Default: 0.0001"
     )
     parser.add_argument(
         "--batch-size",
@@ -68,31 +73,31 @@ if __name__ == "__main__":
         "--max-epochs",
         type=int,
         default=300,
-        help="Maximum number of epochs. Default: 300"
+        help="Maximum number of epochs. Default: 500"
     )
     parser.add_argument(
         "--hidden-neurons",
         type=int,
         default=300,
-        help="Number of neurons in the hidden dense layer. Default: 300"
+        help="Number of neurons in the hidden dense layer. Default: 256"
     )
     parser.add_argument(
         "--dropout-rate",
         type=float,
-        default=0.5,
-        help="Dropout rate for the hidden dropout layer (0<rate<1)."
+        default=0.2,
+        help="Dropout rate for the hidden dropout layer (0<rate<1). Default: 0.2"
     )
-    parser.add_argument(
-        "--nb-corr",
-        type=int,
-        default=20,
-        help="Number of input gene per target gene. Default: 20"
-    )
+    # parser.add_argument(
+    #     "--nb-corr",
+    #     type=int,
+    #     default=20,
+    #     help="Number of input gene per target gene. Default: 20"
+    # )
     parser.add_argument(
         "--output-neurons",
         type=int,
-        default=500,
-        help="Number of output neurons per sub-network. Default: 500"
+        default=512,
+        help="Number of output neurons per sub-network. Default: 512"
     )
 
     args = parser.parse_args()
@@ -101,16 +106,22 @@ if __name__ == "__main__":
     if args.cell_axis == "columns":
         data = data.T
 
-    NN_params = {'dims': [args.nb_corr,args.output_neurons],
-                 'learning_rate': args.learning_rate,
-                 'batch_size': args.batch_size,
-                 'max_epochs': args.max_epochs,
-                 'layers': [
-                     {"label": "dense", "activation": "relu", "nb_neurons": args.hidden_neurons},
-                     {"label": "dropout", "activation": "dropout", "rate": args.dropout_rate},
-                     {"label": "dense", "activation": "relu"}] }
+    NN_params = {
+        'learning_rate': args.learning_rate,
+        'batch_size': args.batch_size,
+        'max_epochs': args.max_epochs,
+        'ncores': args.cores,
+        'sub_outputdim': args.output_neurons,
+        'architecture': [
+            {"label": "dense", "activation": "relu", "nb_neurons": args.hidden_neurons},
+            {"label": "dropout", "activation": "dropout", "rate": args.dropout_rate}]
+    }
     
     imputed = deepImpute(
-        data, n_cores=args.cores, NN_lim=args.limit, cell_subset=args.subset, **NN_params
+        data,
+        NN_lim=args.limit,
+        cell_subset=args.subset,
+        threshold=args.threshold,
+        NN_params=NN_params
     )
     imputed.to_csv(args.o)

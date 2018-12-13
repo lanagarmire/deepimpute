@@ -4,19 +4,18 @@ import numpy as np
 import test_data
 from deepimpute.net import Net
 
-
 class TestNet(unittest.TestCase):
     """ """
 
     def test_init_works(self):
-        net = Net()
-        net.set_params(
-            max_epochs=50,
-            learning_rate=1e-3,
-            batch_size=50,
-            layer2={"label": "dense", "activation": "relu", "nb_neurons": 50},
-            ncores=4,
+        net = Net(dims=[400,400],
+                  max_epochs=50,
+                  learning_rate=1e-3,
+                  batch_size=50,
+                  architecture = [{"type": "dense", "activation": "relu", "neurons": 50}],
+                  ncores=4,
         )
+        return net
 
     def test_preprocess(self):
         rawData = test_data.rawData
@@ -25,18 +24,19 @@ class TestNet(unittest.TestCase):
         rawData = np.log10(1 + rawData[idx])
 
         hyperparams = {
-            "layers": [
-                {"label": "dense", "activation": "relu", "nb_neurons": 100},
-                {"label": "dropout", "activation": "dropout", "rate": 0.15},
-                {"label": "dense", "activation": "relu"},
+            "architecture": [
+                {"type": "dense", "activation": "relu", "neurons": 10},
+                {"type": "dropout", "activation": "dropout", "rate": 0.15},
             ],
-            "n_cores": 6,
+            "ncores": 3,
+            "max_epochs": 50
         }
 
-        model = Net(**hyperparams)
-        model.fit(rawData)
-        _ = model.predict(rawData)
-        print(model.score(rawData))
+        X,Y = rawData.iloc[:,:50],rawData.iloc[:,:20],
+
+        model = Net(dims=[X.shape[1],Y.shape[1]],**hyperparams)
+        model.fit(X,Y,verbose=1)
+        print(model.score(X,Y))
 
 
 if __name__ == "__main__":

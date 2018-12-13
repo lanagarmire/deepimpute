@@ -15,22 +15,20 @@ class TestMultinet(unittest.TestCase):
         rawData = rawData[idx]
 
         hyperparams = {
-            "layers": [
-                {"label": "dense", "activation": "relu", "nb_neurons": 150},
-                {"label": "dropout", "activation": "dropout", "rate": 0.2},
-                {"label": "dense", "activation": "relu"},
+            "architecture": [
+                {"type": "dense", "activation": "relu", "neurons": 150},
+                {"type": "dropout", "activation": "dropout", "rate": 0.2},
             ],
             "loss": "wMSE",
-            "optimizer": "Adam",
-            "dims": [20, 500],
-            "preproc": "log_or_exp",
-            "seed": 1,
-            "ncores": 4,
+            "sub_outputdim": 512,
+            "normalization": "log_or_exp",
+            "seed": 123,
+            "ncores": 2,
         }
 
         model = MultiNet(**hyperparams)
         model.fit(rawData)
-        _ = model.predict(rawData)
+        _ = model.predict(rawData,policy="restore")
 
         print(model.score(rawData))
 

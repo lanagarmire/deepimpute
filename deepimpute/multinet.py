@@ -1,22 +1,25 @@
 import os
 from itertools import chain
+
 import pandas as pd
 import numpy as np
+from scipy.stats import pearsonr
+
 import matplotlib.pyplot as plt
 
-import multiprocessing
+# import multiprocessing
 from multiprocessing.pool import Pool
 
 from deepimpute.net import Net
 from deepimpute.normalizer import Normalizer
 
-multiprocessing.set_start_method('spawn', force=True)
+# multiprocessing.set_start_method('spawn', force=True)
 
 def fit_parallel(args):
     NN_parameters,output,X,Y = args
     net = Net(dims=[X.shape[1],Y.shape[1]],
               outputdir=output,
-              **NN_parameters
+              **NN_parameters,
     )
     net.fit(X,Y)
     print("Training finished. Writing to {}".format(output))
@@ -26,25 +29,28 @@ class MultiNet:
     def __init__(self,
                  learning_rate=1e-4,
                  batch_size=64,
-                 n_cores=20,
+                 max_epochs=500,
+                 ncores=20,
                  loss="wMSE",
                  normalization="log_or_exp",
                  output_prefix="/tmp/multinet",
                  sub_outputdim=512,
-                 seed=1234
+                 seed=1234,
+                 architecture=None
     ):
         self.NN_parameters = {"learning_rate": learning_rate,
                               "batch_size": batch_size,
                               "loss": loss,
+                              "architecture": architecture,
+                              "max_epochs": max_epochs,
+                              "seed": seed
                               }
         self.normalization = normalization
         self.sub_outputdim = sub_outputdim
         self.output_prefix = output_prefix
         self.outputdirs = []
-        self.cores = n_cores
-
-        if seed is not None:
-            np.random.seed(seed)
+        self.ncores = ncores
+        self.seed = seed
 
     def initSubNet(self,dims,output):
         net = Net(dims=dims,
@@ -59,10 +65,13 @@ class MultiNet:
             raw,
             cell_subset=1,
             NN_lim=None,
-            npred=1000,
+            npred=2000,
             ntop=20,
+            minExpressionLevel=0.05,
             gene_metrics=None
     ):
+        if self.seed is not None:
+            np.random.seed(self.seed)
         
         if cell_subset != 1:
             if cell_subset < 1:
@@ -71,12 +80,11 @@ class MultiNet:
                 raw = raw.sample(cell_subset)
 
         if gene_metrics is None:
-            # gene_metrics = raw.quantile(.99) ; threshold = 5 # Gene criteria for filtering
             gene_metrics = raw[raw>0].std()
+            minExpressionLevel = 1
+            # gene_metrics = (raw>0).mean()
 
-        threshold = 1
-     
-        genesToImpute = self.filter_genes(gene_metrics, threshold, NN_lim=NN_lim)
+        genesToImpute = self.filter_genes(gene_metrics, minExpressionLevel, NN_lim=NN_lim)
         
         self.setTargets(raw.loc[:,genesToImpute])
         self.setPredictors(raw.loc[:,genesToImpute],npred=npred,ntop=ntop)
@@ -87,12 +95,14 @@ class MultiNet:
         self.outputdirs = ["{}/NN_{}".format(self.output_prefix,i)
                            for i in range(len(self.targets))]
 
+        self.NN_parameters['ncores'] = max(1,int( self.ncores / len(self.targets) ) )
+
         inputs = [(self.NN_parameters,output,norm_data[predictors],norm_data[targets])
                   for (output,predictors,targets) in zip(self.outputdirs,
                                                          self.predictors,
                                                          self.targets)]
 
-        pool = Pool(self.cores)
+        pool = Pool(self.ncores)
         pool.map(fit_parallel,inputs)
         pool.close()
 
@@ -101,7 +111,6 @@ class MultiNet:
     def predict(self,
                 raw,
                 imputed_only=False,
-                restore_pos_values=False,
                 policy="restore"):
 
         normalizer = Normalizer.fromName(self.normalization).fit(raw)
@@ -130,7 +139,7 @@ class MultiNet:
         # Convert back to counts
         imputed = normalizer.transform(imputed,rev=True)        
         
-        if policy == "restore" or restore_pos_values:
+        if policy == "restore":
             print("Filling zeros")
             imputed = imputed.mask(raw>0,raw)
         elif policy == "max":
@@ -147,13 +156,11 @@ class MultiNet:
                     threshold,
                     NN_lim=None
     ):
-        if NN_lim is None:
-            gene_filtered = gene_metric.index[gene_metric > threshold]
-        else:
+        if str(NN_lim).isdigit():
             gene_filtered = gene_metric.sort_values(ascending=False).index[:NN_lim]
+        else:
+            gene_filtered = gene_metric.index[gene_metric > threshold]            
 
-        # if len(gene_filtered)>10000:
-        #     gene_filtered = gene_filtered[:10000]
         print("{} genes selected for imputation".format(len(gene_filtered)))
 
         return gene_filtered
@@ -205,12 +212,24 @@ class MultiNet:
                                          columns=raw.columns).fillna(0)[potential_pred]
         self.predictors = []
         for i,targets in enumerate(self.targets):
-            subMatrix = covariance_matrix.loc[targets].drop(
-                np.intersect1d(targets,potential_pred),axis=1)
+            subMatrix = ( covariance_matrix
+                          .loc[targets]
+                          .drop( np.intersect1d(targets,potential_pred),axis=1 )
+                          )
             sorted_idx = np.argsort(-subMatrix.values,axis=1)
             predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
 
             self.predictors.append(np.unique(predictors))
+
+            print("Net {}: {} predictors, {} targets"
+                  .format(i,len(np.unique(predictors)),len(targets)))
+
+    def score(self,data,policy=None):
+        Y_hat = self.predict(data,policy=policy)
+        Y = data.loc[Y_hat.index,Y_hat.columns]
+
+        return pearsonr(Y_hat.values.reshape(-1), Y.values.reshape(-1))
+        
 
 if __name__ == '__main__':
 
@@ -231,7 +250,7 @@ if __name__ == '__main__':
     
     # Deepimpute
     if not os.path.exists('dp_prediction.csv'):
-        model_DI = MN(n_cores=20,loss='wMSE')
+        model_DI = MN(ncores=20,loss='wMSE')
         model_DI.fit(raw,NN_lim=2000)
         pred_DI = model_DI.predict(raw,restore_pos_values=False)
         pred_DI.to_csv('dp_prediction.csv')
