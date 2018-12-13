@@ -48,16 +48,19 @@ def get_int(name):
     return getter_wrapper
 
 def get_input_genes(
-        dataframeToImpute, dims, distanceMatrix=None, targets=None, seed=1234 #predictorDropoutLimit=.99,seed=1234
+        dataframeToImpute, outputdim, nbest=20, distanceMatrix=None, targets=None, predictorLimit=None,seed=1234
 ):
-    #geneDropoutRate = (dataframeToImpute==0).mean()
-    potential_predictors = dataframeToImpute.columns #geneDropoutRate.index[geneDropoutRate < predictorDropoutLimit]
+    np.random.seed(seed)
 
+    potential_predictors = (dataframeToImpute
+                            .std()
+                            .sort_values(ascending=False)
+                            .index[:predictorLimit]
+                            )
     print("Keeping {} potential predictors.".format(len(potential_predictors)))
     
     if targets is None:
-        np.random.seed(seed)
-        targets = [np.random.choice(dataframeToImpute.columns, dims[1], replace=False)]
+        targets = [np.random.choice(dataframeToImpute.columns, outputdim, replace=False)]
 
     if distanceMatrix is None:
         distanceMatrix = pd.DataFrame(
@@ -66,27 +69,30 @@ def get_input_genes(
         )[potential_predictors]
     in_out_genes = []
 
-    max_limit = dims[0]
     for genes in targets:
-        pred_to_rmv = np.setdiff1d(potential_predictors,targets)
-        subMatrix = distanceMatrix.loc[genes].drop(pred_to_rmv,axis=1)
+        # pred_to_rmv = np.setdiff1d(potential_predictors,targets)
+        # subMatrix = distanceMatrix.loc[genes].drop(pred_to_rmv,axis=1)
+        subMatrix = (distanceMatrix
+                     .loc[genes]
+                     .drop(np.intersect1d(genes,potential_predictors),axis=1)
+                     )
         sorted_idx = np.argsort(-subMatrix.values,axis=1)
-        predictorGenes = subMatrix.columns[sorted_idx[:,:max_limit]].values.flatten()        
+        predictorGenes = subMatrix.columns[sorted_idx[:,:nbest]].values.flatten()        
         in_out_genes.append((predictorGenes, genes))
     return in_out_genes
 
 
-def _get_target_genes(geneQuantiles, minExpressionLevel, maxNumOfGenes):
+def _get_target_genes(geneMetric, minExpressionLevel, maxNumOfGenes):
     if maxNumOfGenes == "auto":
-        targetGenes = geneQuantiles[geneQuantiles > minExpressionLevel].index
-        print("Minimum gene count for imputation set to {}, leaving {} genes for imputation."
+        targetGenes = geneMetric[geneMetric > minExpressionLevel].index
+        print("Minimum gene level for imputation set to {}, leaving {} genes for imputation."
               .format(minExpressionLevel,len(targetGenes)))
 
     else:
         if maxNumOfGenes is None:
-            maxNumOfGenes = len(geneQuantiles)
-        maxNumOfGenes = min(maxNumOfGenes, len(geneQuantiles))
-        targetGenes = geneQuantiles.sort_values(ascending=False).index[:maxNumOfGenes]
+            maxNumOfGenes = len(geneMetric)
+        maxNumOfGenes = min(maxNumOfGenes, len(geneMetric))
+        targetGenes = geneMetric.sort_values(ascending=False).index[:maxNumOfGenes]
         print("Gene prediction limit set to {} genes".format(len(targetGenes)))
 
     return targetGenes.tolist()

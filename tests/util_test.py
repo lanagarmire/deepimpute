@@ -17,7 +17,7 @@ class TestUtil(unittest.TestCase):
 
     def test_get_input_genes(self):
         data = pd.DataFrame(np.identity(10))
-        res = util.get_input_genes(data, [2, 5], targets=[[0, 1]])
+        _ = util.get_input_genes(data, 2, nbest=5, targets=[[0, 1]])
 
     def test_get_target_genes(self):
         genes_quantiles = pd.Series([1, 15, 9, 10, 12])

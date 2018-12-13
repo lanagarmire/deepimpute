@@ -226,20 +226,13 @@ class Net(object):
         if predictorGenes is None:
             self.predictorGenes, self.targetGenes = get_input_genes(
                 data,
-                self.dims,
+                self.dims[1],
+                nbest=self.dims[0],
                 distanceMatrix=dists,
                 targets=targetGenes
             )[0]
         else:
             self.predictorGenes, self.targetGenes = predictorGenes, targetGenes
-
-        # filt = (data[self.targetGenes] > 0).sum(axis=1) >= self.dims[1] * cell_thresh
-
-        # n_iter = 0
-        # while (filt.astype(int).sum() == 0) and (n_iter<10000):
-        #     cell_thresh /= 2
-        #     n_iter += 1
-        #     filt = (data[self.targetGenes] > 0).sum(axis=1) >= self.dims[1] * cell_thresh 
         
         features, targets = (
             data.loc[:, self.predictorGenes].values,

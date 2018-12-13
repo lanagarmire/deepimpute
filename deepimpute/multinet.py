@@ -56,13 +56,13 @@ class MultiNet(object):
     def __init__(
         self,
         n_cores=4,
-        minExpressionLevel=5,
+        minExpressionLevel=0.05,
         normalization="log_or_exp",
         runDir=os.path.join(tempfile.gettempdir(), "run"),
         seed=0,
         **NN_params
     ):
-        self._maxcores = n_cores
+        self.maxcores = min(n_cores, cpu_count())
         self.inOutGenes = None
         self.norm = normalization
         self.runDir = runDir
@@ -73,20 +73,6 @@ class MultiNet(object):
             NN_params["dims"] = [20, 512]
         self.NN_params = NN_params
         self.trainingParams = None
-        self._minExpressionLevel = minExpressionLevel
-        
-    @property
-    def maxcores(self):
-        if self._maxcores == "all":
-            return cpu_count()
-        return self._maxcores
-
-    @maxcores.setter
-    def maxcores(self, value):
-        self._maxcores = value
-
-    def get_params(self, deep=False):
-        return self.__dict__
 
     def _setIDandRundir(self, data):
         # set runID
@@ -101,9 +87,8 @@ class MultiNet(object):
         self.NN_params["n_cores"] = max(1, int(self.maxcores / n_cores))
         return n_runs, n_cores
 
-    def fit(self, data, NN_lim="auto", cell_subset=None, NN_genes=None, retrieve_training=False):
+    def fit(self, data, NN_lim="auto", minExpressionLevel=.05, cell_subset=None, targetGeneNames=None, retrieve_training=False, predictorLimit=2000):
         np.random.seed(seed=self.seed)
-        targetGeneNames = NN_genes
         
         inputExpressionMatrixDF = pd.DataFrame(data)
         print("Input dataset is {} genes (columns) and {} cells (rows)".format(inputExpressionMatrixDF.shape[1], inputExpressionMatrixDF.shape[0]))
@@ -119,11 +104,9 @@ class MultiNet(object):
         subnetOutputColumns = self.NN_params["dims"][1]
         
         # Choose genes to impute
-        # geneCounts = inputExpressionMatrixDF.sum().sort_values(ascending=False)
-        geneQuantiles = inputExpressionMatrixDF.quantile(.99).sort_values(ascending=False)
-
         if targetGeneNames is None:
-            targetGeneNames = _get_target_genes(geneQuantiles, minExpressionLevel = self._minExpressionLevel, maxNumOfGenes = NN_lim)
+            geneMetric = (inputExpressionMatrixDF > 0).mean()
+            targetGeneNames = _get_target_genes(geneMetric, minExpressionLevel=minExpressionLevel, maxNumOfGenes = NN_lim)
 
         df_to_impute = inputExpressionMatrixDF[targetGeneNames]
 
@@ -159,13 +142,13 @@ class MultiNet(object):
         )
         
         if self.inOutGenes is None:
-
             self.inOutGenes = get_input_genes(
                 df_to_impute,
-                self.NN_params["dims"],
+                self.NN_params["dims"][1],
+                nbest=self.NN_params["dims"][0],
                 distanceMatrix=corrMatrix,
                 targets=subGenelists,
-                #predictorDropoutLimit=self.predictorDropoutLimit
+                predictorLimit=predictorLimit
             )
 
         # ------------------------# Subsets for fitting #------------------------#
@@ -251,6 +234,9 @@ class MultiNet(object):
 
         Y_imputed = pd.concat(output_dicts, axis=1)
         Y_imputed = Y_imputed.groupby(by=Y_imputed.columns,axis=1).mean()
+
+        Y_imputed = Y_imputed.mask(Y_imputed > df_norm.values.max(), df_norm[Y_imputed.columns])
+        
         Y_imputed = normalizer.transform(Y_imputed,rev=True)
         
         Y_not_imputed = df.drop(Y_imputed.columns,axis=1)
@@ -266,8 +252,6 @@ class MultiNet(object):
             
         if imputed_only:
             Y_total = Y_total[Y_imputed.columns]
-
-        Y_total[np.isinf(Y_total) | np.isnan(Y_total)] = 1e4
 
         if type(data) == type(pd.DataFrame()):
             return Y_total
