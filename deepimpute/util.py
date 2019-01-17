@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 
 from deepimpute.maskedArrays import MaskedArray
 
@@ -47,49 +46,49 @@ def get_int(name):
 
     return getter_wrapper
 
-def get_input_genes(
-        dataframeToImpute, dims, distanceMatrix=None, targets=None, seed=1234 #predictorDropoutLimit=.99,seed=1234
-):
-    #geneDropoutRate = (dataframeToImpute==0).mean()
-    potential_predictors = dataframeToImpute.columns #geneDropoutRate.index[geneDropoutRate < predictorDropoutLimit]
+# def get_input_genes(
+#         dataframeToImpute, dims, distanceMatrix=None, targets=None, seed=1234 #predictorDropoutLimit=.99,seed=1234
+# ):
+#     #geneDropoutRate = (dataframeToImpute==0).mean()
+#     potential_predictors = dataframeToImpute.columns #geneDropoutRate.index[geneDropoutRate < predictorDropoutLimit]
 
-    print("Keeping {} potential predictors.".format(len(potential_predictors)))
+#     print("Keeping {} potential predictors.".format(len(potential_predictors)))
     
-    if targets is None:
-        np.random.seed(seed)
-        targets = [np.random.choice(dataframeToImpute.columns, dims[1], replace=False)]
+#     if targets is None:
+#         np.random.seed(seed)
+#         targets = [np.random.choice(dataframeToImpute.columns, dims[1], replace=False)]
 
-    if distanceMatrix is None:
-        distanceMatrix = pd.DataFrame(
-            np.abs(np.corrcoef(dataframeToImpute.T)),
-            index=dataframeToImpute.columns, columns=dataframeToImpute.columns
-        )[potential_predictors]
-    in_out_genes = []
+#     if distanceMatrix is None:
+#         distanceMatrix = pd.DataFrame(
+#             np.abs(np.corrcoef(dataframeToImpute.T)),
+#             index=dataframeToImpute.columns, columns=dataframeToImpute.columns
+#         )[potential_predictors]
+#     in_out_genes = []
 
-    max_limit = dims[0]
-    for genes in targets:
-        pred_to_rmv = np.setdiff1d(potential_predictors,targets)
-        subMatrix = distanceMatrix.loc[genes].drop(pred_to_rmv,axis=1)
-        sorted_idx = np.argsort(-subMatrix.values,axis=1)
-        predictorGenes = subMatrix.columns[sorted_idx[:,:max_limit]].values.flatten()        
-        in_out_genes.append((predictorGenes, genes))
-    return in_out_genes
+#     max_limit = dims[0]
+#     for genes in targets:
+#         pred_to_rmv = np.setdiff1d(potential_predictors,targets)
+#         subMatrix = distanceMatrix.loc[genes].drop(pred_to_rmv,axis=1)
+#         sorted_idx = np.argsort(-subMatrix.values,axis=1)
+#         predictorGenes = subMatrix.columns[sorted_idx[:,:max_limit]].values.flatten()        
+#         in_out_genes.append((predictorGenes, genes))
+#     return in_out_genes
 
 
-def _get_target_genes(geneQuantiles, minExpressionLevel, maxNumOfGenes):
-    if maxNumOfGenes == "auto":
-        targetGenes = geneQuantiles[geneQuantiles > minExpressionLevel].index
-        print("Minimum gene count for imputation set to {}, leaving {} genes for imputation."
-              .format(minExpressionLevel,len(targetGenes)))
+# def _get_target_genes(geneQuantiles, minExpressionLevel, maxNumOfGenes):
+#     if maxNumOfGenes == "auto":
+#         targetGenes = geneQuantiles[geneQuantiles > minExpressionLevel].index
+#         print("Minimum gene count for imputation set to {}, leaving {} genes for imputation."
+#               .format(minExpressionLevel,len(targetGenes)))
 
-    else:
-        if maxNumOfGenes is None:
-            maxNumOfGenes = len(geneQuantiles)
-        maxNumOfGenes = min(maxNumOfGenes, len(geneQuantiles))
-        targetGenes = geneQuantiles.sort_values(ascending=False).index[:maxNumOfGenes]
-        print("Gene prediction limit set to {} genes".format(len(targetGenes)))
+#     else:
+#         if maxNumOfGenes is None:
+#             maxNumOfGenes = len(geneQuantiles)
+#         maxNumOfGenes = min(maxNumOfGenes, len(geneQuantiles))
+#         targetGenes = geneQuantiles.sort_values(ascending=False).index[:maxNumOfGenes]
+#         print("Gene prediction limit set to {} genes".format(len(targetGenes)))
 
-    return targetGenes.tolist()
+#     return targetGenes.tolist()
 
 
 def score_model(model, data, metric, cols=None):
@@ -115,12 +114,5 @@ def score_model(model, data, metric, cols=None):
     )
     return score_res
 
-def wMSE(y_true,y_pred):
-    return tf.reduce_mean(y_true*tf.square(y_true-y_pred))
-
-def poisson_loss(y_true,y_pred):
-    # mask = tf.cast(y_true>0,tf.float32)
-    y_true = y_true + 0.001
-    NLL = tf.lgamma(y_pred+1)-y_pred*tf.log(y_true)
-    return tf.reduce_mean(NLL)
-
+# def wMSE(y_true,y_pred):
+#     return tf.reduce_mean(y_true*tf.square(y_true-y_pred))

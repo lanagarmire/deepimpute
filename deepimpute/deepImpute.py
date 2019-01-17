@@ -3,18 +3,18 @@ from deepimpute.multinet import MultiNet
 
 
 def deepImpute(
-    data,
-    NN_lim="auto",
-    cell_subset=1,
-    imputed_only=False,
-    policy="restore",
-    threshold=0.01,
-    **NN_params
+        data,
+        NN_lim="auto",
+        cell_subset=1,
+        imputed_only=False,
+        policy="restore",
+        noise=1,
+        minPct=0.01,
+        **NN_params
 ):
     multi = MultiNet(**NN_params)
-    multi.fit(data, NN_lim=NN_lim, cell_subset=cell_subset, minExpressionLevel=threshold)
+    multi.fit(data, NN_lim=NN_lim, cell_subset=cell_subset, noiseLevel=noise, minPct=0.01)
     return multi.predict(data, imputed_only=imputed_only, policy=policy)
-
 
 if __name__ == "__main__":
     import argparse
@@ -45,11 +45,17 @@ if __name__ == "__main__":
         help="Genes to impute (e.g. first 2000 genes). Default: auto",
     )
     parser.add_argument(
-        "--threshold",
+        "--noiseLevel",
+        type=str,
+        default="1",
+        help="Noise threshold for gene exclusion. Gene with ${minPct}% cells with a VMR below ${noise} are discarded. Used if --limit is set to 'auto'. Default: 1",
+    )
+    parser.add_argument(
+        "--minPct",
         type=str,
         default="0.01",
-        help="Threshold for genes to impute based on their dropout rate. Used if --limit is set to 'auto'. Default: 0.01",
-    )    
+        help="Threshold for genes exclusion. Gene with ${minPct}% cells below ${noise} count are discarded. Used if --limit is set to 'auto'. Default: 0.01",
+    )        
     parser.add_argument(
         "--subset",
         type=float,
@@ -121,7 +127,8 @@ if __name__ == "__main__":
         data,
         NN_lim=args.limit,
         cell_subset=args.subset,
-        threshold=args.threshold,
+        noiseLevel=args.noise,
+        minPct=args.noise,
         NN_params=NN_params
     )
     imputed.to_csv(args.o)

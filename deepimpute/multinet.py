@@ -1,5 +1,4 @@
-import os
-from itertools import chain
+import os,binascii
 
 import pandas as pd
 import numpy as np
@@ -7,13 +6,10 @@ from scipy.stats import pearsonr
 
 import matplotlib.pyplot as plt
 
-# import multiprocessing
 from multiprocessing.pool import Pool
 
 from deepimpute.net import Net
 from deepimpute.normalizer import Normalizer
-
-# multiprocessing.set_start_method('spawn', force=True)
 
 def fit_parallel(args):
     NN_parameters,output,X,Y = args
@@ -23,6 +19,23 @@ def fit_parallel(args):
     )
     net.fit(X,Y)
     print("Training finished. Writing to {}".format(output))
+
+def generate_random_id():
+    rd_number = binascii.b2a_hex(os.urandom(3))
+
+    if type(rd_number) is bytes:
+        rd_number = rd_number.decode()
+    return rd_number
+
+def get_distance_matrix(raw,npred):
+    potential_pred = ( (raw.std() / (1+raw.mean()))
+                       .sort_values(ascending=False)
+                       .index[:npred])
+    
+    covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(raw.T)),
+                                     index=raw.columns,
+                                     columns=raw.columns).fillna(0)[potential_pred]
+    return covariance_matrix
 
 class MultiNet:
 
@@ -47,7 +60,7 @@ class MultiNet:
                               }
         self.normalization = normalization
         self.sub_outputdim = sub_outputdim
-        self.output_prefix = output_prefix
+        self.output_prefix = "{}-{}".format(output_prefix,generate_random_id())
         self.outputdirs = []
         self.ncores = ncores
         self.seed = seed
@@ -65,10 +78,12 @@ class MultiNet:
             raw,
             cell_subset=1,
             NN_lim=None,
-            npred=2000,
-            ntop=20,
-            minExpressionLevel=0.05,
-            gene_metrics=None
+            npred=5000,
+            ntop=5,
+            minVMR=0.5,
+            # noiseLevel=1,
+            # minPct=0.01,
+            mode='random',
     ):
         if self.seed is not None:
             np.random.seed(self.seed)
@@ -79,15 +94,13 @@ class MultiNet:
             else:
                 raw = raw.sample(cell_subset)
 
-        if gene_metrics is None:
-            gene_metrics = raw[raw>0].std()
-            minExpressionLevel = 1
-            # gene_metrics = (raw>0).mean()
+        gene_metric = (raw.var()/(1+raw.mean())).sort_values(ascending=False)
+        genes_to_impute = self.filter_genes(gene_metric, minVMR, NN_lim=NN_lim)
 
-        genesToImpute = self.filter_genes(gene_metrics, minExpressionLevel, NN_lim=NN_lim)
+        covariance_matrix = get_distance_matrix(raw,npred)
         
-        self.setTargets(raw.loc[:,genesToImpute])
-        self.setPredictors(raw.loc[:,genesToImpute],npred=npred,ntop=ntop)
+        self.setTargets(raw.reindex(columns=genes_to_impute), mode=mode)
+        self.setPredictors(covariance_matrix,ntop=ntop)
 
         normalizer = Normalizer.fromName(self.normalization).fit(raw)
         norm_data = normalizer.transform(raw)
@@ -96,6 +109,8 @@ class MultiNet:
                            for i in range(len(self.targets))]
 
         self.NN_parameters['ncores'] = max(1,int( self.ncores / len(self.targets) ) )
+
+        print("Using {} cores / thread ({} threads)".format(self.NN_parameters['ncores'], len(self.targets)))
 
         inputs = [(self.NN_parameters,output,norm_data[predictors],norm_data[targets])
                   for (output,predictors,targets) in zip(self.outputdirs,
@@ -126,16 +141,16 @@ class MultiNet:
 
         predicted = pd.DataFrame(np.hstack(predicted),
                                  index=raw.index,
-                                 columns=list(chain(*self.targets)))
+                                 columns=self.targets.flatten())
 
         predicted = predicted.groupby(by=predicted.columns,axis=1).mean()
         
-        not_predicted = norm_raw.drop(list(chain(*self.targets)),axis=1)
+        not_predicted = norm_raw.drop(self.targets.flatten(),axis=1)
 
         imputed = pd.concat([predicted,not_predicted],axis=1).loc[raw.index,raw.columns]
 
         # To prevent overflow
-        imputed = imputed.mask( (imputed>norm_raw.values.max()) | imputed.isnull(), norm_raw)
+        imputed = imputed.mask( (imputed>2*norm_raw.values.max()) | imputed.isnull(), norm_raw)
         # Convert back to counts
         imputed = normalizer.transform(imputed,rev=True)        
         
@@ -152,69 +167,44 @@ class MultiNet:
             return imputed
         
     def filter_genes(self,
-                    gene_metric,
+                    gene_metric, # assumes gene_metric is sorted
                     threshold,
                     NN_lim=None
     ):
-        if str(NN_lim).isdigit():
-            gene_filtered = gene_metric.sort_values(ascending=False).index[:NN_lim]
-        else:
-            gene_filtered = gene_metric.index[gene_metric > threshold]            
+        if not str(NN_lim).isdigit():
+            NN_lim = (gene_metric > threshold).sum()
 
-        print("{} genes selected for imputation".format(len(gene_filtered)))
+        n_subsets = int(np.ceil(NN_lim / self.sub_outputdim))
+        genes_to_impute = gene_metric.index[:n_subsets*self.sub_outputdim]
 
-        return gene_filtered
+        rest = (self.sub_outputdim*n_subsets) % len(genes_to_impute)
 
+        if rest > 0:
+            fill_genes = np.random.choice(gene_metric.index, rest)
+            genes_to_impute = np.concatenate([genes_to_impute,fill_genes])
 
-    def setTargets(self,data):
+        print("{} genes selected for imputation".format(len(genes_to_impute)))
+
+        return genes_to_impute
+
+    def setTargets(self,data, mode='random'):
         
         n_subsets = int(data.shape[1]/self.sub_outputdim)
+
+        if mode == 'progressive':
+            self.targets = data.columns.values.reshape([n_subsets,self.sub_outputdim])
+        else:
+            self.targets = np.random.choice(data.columns,
+                                            [n_subsets,self.sub_outputdim],
+                                            replace=False)
         
-        self.targets = np.random.choice(data.columns,
-                                        [n_subsets,self.sub_outputdim],
-                                        replace=False)
+    def setPredictors(self,covariance_matrix,ntop=5):
         
-        leftout_genes = np.setdiff1d(data.columns,self.targets.flatten())
-
-        if len(leftout_genes) > 0:
-            fill_genes = np.random.choice(data.columns,
-                                          self.sub_outputdim-len(leftout_genes),
-                                          replace=False)
-            last_batch = np.concatenate([leftout_genes,fill_genes])
-            self.targets = np.vstack([self.targets,last_batch])
-            # self.targets = self.targets.tolist() + [leftout_genes.tolist()]
-
-    # def _setPredictors(self,data,ntop=20):
-
-    #     mask = (data==0).astype(float).T
-    #     dists = 1 / (1+np.dot(mask.values,data.values))
-        
-    #     dist_matrix = pd.DataFrame(dists,
-    #                                index=data.columns,
-    #                                columns=data.columns)
-    #     self.predictors = []
-    #     for i,targets in enumerate(self.targets):
-    #         subMatrix = dist_matrix.loc[targets]
-    #         sorted_idx = np.argsort(-subMatrix.values,axis=1)
-    #         predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
-
-    #         print("{} predictors selected for model {}"
-    #               .format(len(np.unique(predictors)),i))
-    #         self.predictors.append(np.unique(predictors))
-
-    def setPredictors(self,raw,ntop=20,npred=2000):
-        potential_pred = ((raw.std() / (1+raw.mean()))
-                          .sort_values(ascending=False)
-                          .index[:npred]
-        )
-        covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(raw.T)),
-                                         index=raw.columns,
-                                         columns=raw.columns).fillna(0)[potential_pred]
         self.predictors = []
         for i,targets in enumerate(self.targets):
             subMatrix = ( covariance_matrix
                           .loc[targets]
-                          .drop( np.intersect1d(targets,potential_pred),axis=1 )
+                          # .drop( np.intersect1d(targets,potential_pred),axis=1 )
                           )
             sorted_idx = np.argsort(-subMatrix.values,axis=1)
             predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()

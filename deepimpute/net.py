@@ -18,7 +18,6 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 def wMSE(y_true,y_pred):
     # weights = tf.cast(y_true>0,tf.float32)
     weights = y_true
-    # return tf.reduce_mean(keras.losses.poisson(y_true, y_pred * weights))
     return tf.reduce_mean(weights*tf.square(y_true-y_pred))
 
 class Net:
@@ -114,20 +113,20 @@ class Net:
         session = tf.Session(config=config)
         K.set_session(session)
 
-        cell_filt = Y.index 
+        # cell_filt = Y.index 
 
         # Build network
         model = self.build()
 
         # Train / Test split
-        X_train, X_test, Y_train, Y_test = train_test_split(X.loc[cell_filt],Y.loc[cell_filt],test_size=0.05)
+        X_train, X_test, Y_train, Y_test = train_test_split(X,Y,test_size=0.05)
 
         # Fitting
         model.fit(X_train,Y_train,
                   validation_data=(X_test,Y_test),
                   epochs=self.max_epochs,
                   batch_size=self.bs,
-                  callbacks=[EarlyStopping(monitor='val_loss',patience=10)],
+                  callbacks=[EarlyStopping(monitor='val_loss',patience=5)],
                   verbose=verbose
         )
         self.save(model)
