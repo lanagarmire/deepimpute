@@ -14,7 +14,7 @@ class TestDeepImpute(unittest.TestCase):
         _ = deepImpute(test_data.rawData, ncores=4, NN_lim=2000)
 
     def test_minExpressionLevel(self):
-    	_ = deepImpute(test_data.rawData, ncores=4, threshold=20)
+    	_ = deepImpute(test_data.rawData, ncores=4, noise=1, minPct=0.01)
 
 
 if __name__ == "__main__":
