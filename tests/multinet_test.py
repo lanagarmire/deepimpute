@@ -11,7 +11,7 @@ class TestMultinet(unittest.TestCase):
 
     def test_all(self):
         rawData = test_data.rawData
-        idx = rawData.quantile(.99).sort_values(ascending=False).index[0:900]
+        idx = rawData.quantile(.99).sort_values(ascending=False).index[0:1300]
         rawData = rawData[idx]
 
         hyperparams = {

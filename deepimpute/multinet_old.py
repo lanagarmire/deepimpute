@@ -6,18 +6,20 @@ from scipy.stats import pearsonr
 
 import matplotlib.pyplot as plt
 
-import keras
-from keras import backend as K
-from keras.models import Model,model_from_json
-from keras.layers import Dense,Dropout,Input
-from keras.callbacks import EarlyStopping
-import keras.losses
+# import multiprocessing
+from multiprocessing.pool import Pool
 
-import tensorflow as tf
-
+from deepimpute.net import Net
 from deepimpute.normalizer import Normalizer
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
+def fit_parallel(args):
+    NN_parameters,output,X,Y = args
+    net = Net(dims=[X.shape[1],Y.shape[1]],
+              outputdir=output,
+              **NN_parameters,
+    )
+    net.fit(X,Y)
+    print("Training finished. Writing to {}".format(output))
 
 def generate_random_id():
     rd_number = binascii.b2a_hex(os.urandom(3))
@@ -36,11 +38,6 @@ def get_distance_matrix(raw,npred):
                                      columns=raw.columns).fillna(0)[potential_pred]
     return covariance_matrix
 
-def wMSE(y_true,y_pred):
-    # weights = tf.cast(y_true>0,tf.float32)
-    weights = y_true
-    return tf.reduce_mean(weights*tf.square(y_true-y_pred))
-
 class MultiNet:
 
     def __init__(self,
@@ -52,7 +49,6 @@ class MultiNet:
                  normalization="log_or_exp",
                  output_prefix="/tmp/multinet",
                  sub_outputdim=512,
-                 verbose=0,
                  seed=1234,
                  architecture=None
     ):
@@ -61,76 +57,24 @@ class MultiNet:
                               "loss": loss,
                               "architecture": architecture,
                               "max_epochs": max_epochs,
+                              "seed": seed
                               }
         self.normalization = normalization
         self.sub_outputdim = sub_outputdim
-        self.outputdir = "/tmp/{}-{}".format(output_prefix,generate_random_id())
+        self.output_prefix = "{}-{}".format(output_prefix,generate_random_id())
+        self.outputdirs = []
         self.ncores = ncores
-        self.verbose = verbose
         self.seed = seed
- 
-    def loadDefaultArchitecture(self):
-        self.NN_parameters['architecture'] = [
-                {"type": "dense", "neurons": 256, "activation": "relu"},
-                {"type": "dropout", "rate": 0.2},
-            ]
+
+    def initSubNet(self,dims,output):
+        net = Net(dims=dims,
+                  learning_rate=self.lr,
+                  batch_size=self.bs,
+                  loss=self.loss,
+                  outputdir=output
+        )
+        return net
         
-    def save(self,model):
-        os.system("mkdir -p {}".format(self.outputdir))
-        
-        model_json = model.to_json()
-                
-        with open("{}/model.json".format(self.outputdir), "w") as json_file:
-            json_file.write(model_json)
-            
-        # serialize weights to HDF5
-        model.save_weights("{}/model.h5".format(self.outputdir))
-        print("Saved model to disk")
-
-    def load(self):
-        json_file = open('{}/model.json'.format(self.outputdir), 'r')
-        loaded_model_json = json_file.read()
-        json_file.close()
-        model = model_from_json(loaded_model_json)
-        model.load_weights('{}/model.h5'.format(self.outputdir))
-
-        return model
-        
-    def build(self,inputdims):
-        if self.NN_parameters['architecture'] is None:
-            self.loadDefaultArchitecture()
-
-        inputs = [ Input(shape=(inputdim,)) for inputdim in inputdims ]
-        outputs = inputs
-
-        for layer in self.NN_parameters['architecture']:
-            if layer['type'].lower() == 'dense':
-                outputs = [ Dense(layer['neurons'],activation=layer['activation'])(output)
-                            for output in outputs ]
-
-            elif layer['type'].lower() == 'dropout':
-                outputs = [ Dropout(layer['rate'], seed=self.seed)(output)
-                            for output in outputs] 
-    
-            else:
-                print("Unknown layer type.")
-
-        outputs = [ Dense(self.sub_outputdim,activation="softplus")(output)
-                    for output in outputs]
-                
-        model = Model(inputs=inputs,outputs=outputs)
-
-        try:
-            loss = eval(self.NN_parameters['loss'])
-        except:
-            loss = getattr(keras.losses, self.NN_parameters['loss'])
-    
-        model.compile(optimizer=keras.optimizers.Adam(lr=self.NN_parameters['learning_rate']),
-                      loss=loss)
-        
-        return model
-
-
     def fit(self,
             raw,
             cell_subset=1,
@@ -143,7 +87,7 @@ class MultiNet:
     ):
         if self.seed is not None:
             np.random.seed(self.seed)
-
+        
         if cell_subset != 1:
             if cell_subset < 1:
                 raw = raw.sample(frac=cell_subset)
@@ -166,44 +110,27 @@ class MultiNet:
         self.setTargets(raw.reindex(columns=genes_to_impute), mode=mode)
         self.setPredictors(covariance_matrix,ntop=ntop)
 
-        print("Normalization")
         normalizer = Normalizer.fromName(self.normalization).fit(raw)
         norm_data = normalizer.transform(raw)
 
-        np.random.seed(self.seed)
-        tf.random.set_random_seed(self.seed)
-        
-        config = tf.ConfigProto(intra_op_parallelism_threads=self.ncores,
-                                inter_op_parallelism_threads=self.ncores,
-                                use_per_session_threads=True,
-                                allow_soft_placement=True, device_count = {'CPU': self.ncores})
-        session = tf.Session(config=config)
-        K.set_session(session)
+        self.outputdirs = ["{}/NN_{}".format(self.output_prefix,i)
+                           for i in range(len(self.targets))]
 
-        print("Building network")
-        model = self.build([ len(genes) for genes in self.predictors ])
+        self.NN_parameters['ncores'] = max(1,int( self.ncores / len(self.targets) ) )
 
-        test_idx = np.random.choice(norm_data.shape[0], int(0.05 * norm_data.shape[0]), replace=False)
-        train_idx = np.setdiff1d(range(norm_data.shape[0]),test_idx)
+        print("Using {} cores / thread ({} threads)".format(self.NN_parameters['ncores'], len(self.targets)))
 
-        norm_data_train = norm_data.iloc[train_idx]
-        norm_data_test = norm_data.iloc[test_idx]        
+        inputs = [(self.NN_parameters,output,
+                   norm_data[predictors].values.astype(np.float32),
+                   norm_data[targets].values.astype(np.float32))
+                  for (output,predictors,targets) in zip(self.outputdirs,
+                                                         self.predictors,
+                                                         self.targets)]        
+        pool = Pool(self.ncores)
+        pool.map(fit_parallel,inputs)
+        pool.close()
+        pool.join()
 
-        X_train = [ norm_data_train[ inputgenes ].values.astype(np.float32) for inputgenes in self.predictors ]
-        Y_train = [ norm_data_train[ targetgenes ].values.astype(np.float32) for targetgenes in self.targets ]
-        X_test = [ norm_data_test[ inputgenes ].values.astype(np.float32) for inputgenes in self.predictors ]
-        Y_test = [ norm_data_test[ targetgenes ].values.astype(np.float32) for targetgenes in self.targets ]
-
-        print("Fitting")
-        model.fit(X_train, Y_train,
-                  validation_data=(X_test,Y_test),
-                  epochs=self.NN_parameters["max_epochs"],
-                  batch_size=self.NN_parameters["batch_size"],
-                  callbacks=[EarlyStopping(monitor='val_loss',patience=5)],
-                  verbose=self.verbose)
-
-        self.save(model)
-        
         return self
 
     def predict(self,
@@ -213,12 +140,14 @@ class MultiNet:
 
         normalizer = Normalizer.fromName(self.normalization).fit(raw)
         norm_raw = normalizer.transform(raw)
-
-        inputs = [ norm_raw.loc[:,predictors].values.astype(np.float32)
-                   for predictors in self.predictors ]
+        
         predicted = []
-        model = self.load()
-        predicted = model.predict(inputs)
+
+        for model_dir,predictors,targets in zip(self.outputdirs,self.predictors,self.targets):
+            net = Net(dims=[len(predictors),len(targets)],
+                      outputdir=model_dir,
+                      **self.NN_parameters)
+            predicted.append(net.predict(norm_raw.loc[:,predictors].values.astype(np.float32)))
 
         predicted = pd.DataFrame(np.hstack(predicted),
                                  index=raw.index,
