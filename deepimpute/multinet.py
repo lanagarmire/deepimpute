@@ -6,6 +6,7 @@ from scipy.stats import pearsonr
 
 import matplotlib.pyplot as plt
 
+# import multiprocessing
 from multiprocessing.pool import Pool
 
 from deepimpute.net import Net
@@ -78,11 +79,10 @@ class MultiNet:
             raw,
             cell_subset=1,
             NN_lim=None,
+            genes_to_impute=None,
             npred=5000,
             ntop=5,
             minVMR=0.5,
-            # noiseLevel=1,
-            # minPct=0.01,
             mode='random',
     ):
         if self.seed is not None:
@@ -95,7 +95,15 @@ class MultiNet:
                 raw = raw.sample(cell_subset)
 
         gene_metric = (raw.var()/(1+raw.mean())).sort_values(ascending=False)
-        genes_to_impute = self.filter_genes(gene_metric, minVMR, NN_lim=NN_lim)
+
+        if genes_to_impute is None:
+            genes_to_impute = self.filter_genes(gene_metric, minVMR, NN_lim=NN_lim)
+        else:
+            n_genes = len(genes_to_impute)
+            if n_genes % self.sub_outputdim != 0:
+                print("The number of input genes is not a multiple of {}. Filling with other genes.".format(n_genes))
+                fill_genes = gene_metric[:(self.sub_outputdim-n_genes)]
+                genes_to_impute = np.concatenate((genes_to_impute,fill_genes))
 
         covariance_matrix = get_distance_matrix(raw,npred)
         
@@ -112,14 +120,16 @@ class MultiNet:
 
         print("Using {} cores / thread ({} threads)".format(self.NN_parameters['ncores'], len(self.targets)))
 
-        inputs = [(self.NN_parameters,output,norm_data[predictors],norm_data[targets])
+        inputs = [(self.NN_parameters,output,
+                   norm_data[predictors].values.astype(np.float32),
+                   norm_data[targets].values.astype(np.float32))
                   for (output,predictors,targets) in zip(self.outputdirs,
                                                          self.predictors,
-                                                         self.targets)]
-
+                                                         self.targets)]        
         pool = Pool(self.ncores)
         pool.map(fit_parallel,inputs)
         pool.close()
+        pool.join()
 
         return self
 
@@ -137,7 +147,7 @@ class MultiNet:
             net = Net(dims=[len(predictors),len(targets)],
                       outputdir=model_dir,
                       **self.NN_parameters)
-            predicted.append(net.predict(norm_raw.loc[:,predictors].values))
+            predicted.append(net.predict(norm_raw.loc[:,predictors].values.astype(np.float32)))
 
         predicted = pd.DataFrame(np.hstack(predicted),
                                  index=raw.index,

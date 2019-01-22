@@ -109,6 +109,7 @@ class Net:
         
         config = tf.ConfigProto(intra_op_parallelism_threads=self.ncores,
                                 inter_op_parallelism_threads=self.ncores,
+                                use_per_session_threads=True,
                                 allow_soft_placement=True, device_count = {'CPU': self.ncores})
         session = tf.Session(config=config)
         K.set_session(session)

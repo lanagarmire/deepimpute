@@ -1,8 +1,16 @@
 import pandas as pd
 import numpy as np
 
-from deepimpute.util import log1x, exp1x, libNorm
+def log1x(x):
+    return np.log(1 + x)
 
+def exp1x(x):
+    return np.exp(x) - 1
+
+def libNorm(scale=10000):
+    def _libNorm(x):
+        return scale / np.sum(x)
+    return _libNorm
 
 class Normalizer(object):
 

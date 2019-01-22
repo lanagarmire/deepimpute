@@ -19,7 +19,6 @@ def libNorm(scale=10000):
         return scale / np.sum(x)
     return _libNorm
 
-
 def set_int(name):
 
     def setter_wrapper(self, value):
