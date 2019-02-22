@@ -47,6 +47,7 @@ class MultiNet:
                  learning_rate=1e-4,
                  batch_size=64,
                  max_epochs=500,
+                 patience=10,
                  ncores=20,
                  loss="wMSE",
                  normalization="log_or_exp",
@@ -61,6 +62,7 @@ class MultiNet:
                               "loss": loss,
                               "architecture": architecture,
                               "max_epochs": max_epochs,
+                              "patience": patience
                               }
         self.normalization = normalization
         self.sub_outputdim = sub_outputdim
@@ -191,16 +193,19 @@ class MultiNet:
 
         X_train = [ norm_data_train[ inputgenes ].values.astype(np.float32) for inputgenes in self.predictors ]
         Y_train = [ norm_data_train[ targetgenes ].values.astype(np.float32) for targetgenes in self.targets ]
+        
         X_test = [ norm_data_test[ inputgenes ].values.astype(np.float32) for inputgenes in self.predictors ]
         Y_test = [ norm_data_test[ targetgenes ].values.astype(np.float32) for targetgenes in self.targets ]
 
-        print("Fitting")
-        model.fit(X_train, Y_train,
-                  validation_data=(X_test,Y_test),
-                  epochs=self.NN_parameters["max_epochs"],
-                  batch_size=self.NN_parameters["batch_size"],
-                  callbacks=[EarlyStopping(monitor='val_loss',patience=5)],
-                  verbose=self.verbose)
+        print("Fitting with {} cells".format(norm_data.shape[0]))
+        result = model.fit(X_train, Y_train,
+                           validation_data=(X_test,Y_test),
+                           epochs=self.NN_parameters["max_epochs"],
+                           batch_size=self.NN_parameters["batch_size"],
+                           callbacks=[EarlyStopping(monitor='val_loss',
+                                                    patience=self.NN_parameters["patience"])],
+                           verbose=self.verbose)
+        print("Stopped fitting after {} epochs".format(len(result.history['loss'])))
 
         self.save(model)
         
@@ -285,7 +290,7 @@ class MultiNet:
         for i,targets in enumerate(self.targets):
             subMatrix = ( covariance_matrix
                           .loc[targets]
-                          # .drop( np.intersect1d(targets,potential_pred),axis=1 )
+                          .drop(np.intersect1d(targets,covariance_matrix.columns),axis=1)
                           )
             sorted_idx = np.argsort(-subMatrix.values,axis=1)
             predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
