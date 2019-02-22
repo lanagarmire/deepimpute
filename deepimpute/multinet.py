@@ -4,8 +4,6 @@ import pandas as pd
 import numpy as np
 from scipy.stats import pearsonr
 
-import matplotlib.pyplot as plt
-
 import keras
 from keras import backend as K
 from keras.models import Model,model_from_json
