@@ -21,8 +21,8 @@ setup(
         "pandas",
         "scipy",
         "sklearn",
-        "tensorflow==1.12.0",
+        "tensorflow",
         "configparser",
-        "keras==2.2.4"
+        "keras"
     ],
 )

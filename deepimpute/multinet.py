@@ -100,6 +100,8 @@ class MultiNet:
         if self.NN_parameters['architecture'] is None:
             self.loadDefaultArchitecture()
 
+        print(self.NN_parameters['architecture'])
+
         inputs = [ Input(shape=(inputdim,)) for inputdim in inputdims ]
         outputs = inputs
 
@@ -127,7 +129,7 @@ class MultiNet:
     
         model.compile(optimizer=keras.optimizers.Adam(lr=self.NN_parameters['learning_rate']),
                       loss=loss)
-        
+
         return model
 
 
@@ -171,7 +173,7 @@ class MultiNet:
         norm_data = normalizer.transform(raw)
 
         np.random.seed(self.seed)
-        tf.random.set_random_seed(self.seed)
+        tf.set_random_seed(self.seed)
         
         config = tf.ConfigProto(intra_op_parallelism_threads=self.ncores,
                                 inter_op_parallelism_threads=self.ncores,
