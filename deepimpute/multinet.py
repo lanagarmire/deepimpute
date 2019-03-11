@@ -24,18 +24,16 @@ def generate_random_id():
         rd_number = rd_number.decode()
     return rd_number
 
-def get_distance_matrix(raw,npred):
-    potential_pred = ( (raw.std() / (1+raw.mean()))
-                       .sort_values(ascending=False)
-                       .index[:npred])
+def get_distance_matrix(raw):
+
+    potential_pred = raw.columns[raw.std() > 0]
     
-    covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(raw.T)),
-                                     index=raw.columns,
-                                     columns=raw.columns).fillna(0)[potential_pred]
+    covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(raw.T.loc[potential_pred])),
+                                     index=potential_pred,
+                                     columns=potential_pred).fillna(0)
     return covariance_matrix
 
 def wMSE(y_true,y_pred):
-    # weights = tf.cast(y_true>0,tf.float32)
     weights = y_true
     return tf.reduce_mean(weights*tf.square(y_true-y_pred))
 
@@ -45,13 +43,13 @@ class MultiNet:
                  learning_rate=1e-4,
                  batch_size=64,
                  max_epochs=500,
-                 patience=10,
+                 patience=5,
                  ncores=20,
                  loss="wMSE",
                  normalization="log_or_exp",
                  output_prefix="/tmp/multinet",
                  sub_outputdim=512,
-                 verbose=0,
+                 verbose=1,
                  seed=1234,
                  architecture=None
     ):
@@ -138,7 +136,6 @@ class MultiNet:
             cell_subset=1,
             NN_lim=None,
             genes_to_impute=None,
-            npred=5000,
             ntop=5,
             minVMR=0.5,
             mode='random',
@@ -163,7 +160,7 @@ class MultiNet:
                 fill_genes = gene_metric[:(self.sub_outputdim-n_genes)]
                 genes_to_impute = np.concatenate((genes_to_impute,fill_genes))
 
-        covariance_matrix = get_distance_matrix(raw,npred)
+        covariance_matrix = get_distance_matrix(raw)
         
         self.setTargets(raw.reindex(columns=genes_to_impute), mode=mode)
         self.setPredictors(covariance_matrix,ntop=ntop)

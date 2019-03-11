@@ -24,6 +24,7 @@ class TestMultinet(unittest.TestCase):
             "normalization": "log_or_exp",
             "seed": 123,
             "ncores": 2,
+            "verbose": 1
         }
 
         model = MultiNet(**hyperparams)
