@@ -13,9 +13,7 @@ import keras.losses
 
 import tensorflow as tf
 
-from deepimpute.normalizer import Normalizer
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
 
 def generate_random_id():
     rd_number = binascii.b2a_hex(os.urandom(3))
@@ -46,7 +44,6 @@ class MultiNet:
                  patience=5,
                  ncores=20,
                  loss="wMSE",
-                 normalization="log_or_exp",
                  output_prefix="/tmp/multinet",
                  sub_outputdim=512,
                  verbose=1,
@@ -60,7 +57,6 @@ class MultiNet:
                               "max_epochs": max_epochs,
                               "patience": patience
                               }
-        self.normalization = normalization
         self.sub_outputdim = sub_outputdim
         self.outputdir = "/tmp/{}-{}".format(output_prefix,generate_random_id())
         self.ncores = ncores
@@ -130,7 +126,6 @@ class MultiNet:
 
         return model
 
-
     def fit(self,
             raw,
             cell_subset=1,
@@ -166,8 +161,8 @@ class MultiNet:
         self.setPredictors(covariance_matrix,ntop=ntop)
 
         print("Normalization")
-        normalizer = Normalizer.fromName(self.normalization).fit(raw)
-        norm_data = normalizer.transform(raw)
+        # normalizer = Normalizer.fromName(self.normalization).fit(raw)
+        norm_data = np.log1p(raw).astype(np.float32) # normalizer.transform(raw)
 
         np.random.seed(self.seed)
         tf.set_random_seed(self.seed)
@@ -182,17 +177,14 @@ class MultiNet:
         print("Building network")
         model = self.build([ len(genes) for genes in self.predictors ])
 
-        test_idx = np.random.choice(norm_data.shape[0], int(0.05 * norm_data.shape[0]), replace=False)
-        train_idx = np.setdiff1d(range(norm_data.shape[0]),test_idx)
+        test_cells = np.random.choice(norm_data.index, int(0.05 * norm_data.shape[0]), replace=False)
+        train_cells = np.setdiff1d(norm_data.index, test_cells)
 
-        norm_data_train = norm_data.iloc[train_idx]
-        norm_data_test = norm_data.iloc[test_idx]        
-
-        X_train = [ norm_data_train[ inputgenes ].values.astype(np.float32) for inputgenes in self.predictors ]
-        Y_train = [ norm_data_train[ targetgenes ].values.astype(np.float32) for targetgenes in self.targets ]
+        X_train = [ norm_data.loc[train_cells, inputgenes].values for inputgenes in self.predictors ]
+        Y_train = [ norm_data.loc[train_cells, targetgenes].values for targetgenes in self.targets ]
         
-        X_test = [ norm_data_test[ inputgenes ].values.astype(np.float32) for inputgenes in self.predictors ]
-        Y_test = [ norm_data_test[ targetgenes ].values.astype(np.float32) for targetgenes in self.targets ]
+        X_test = [ norm_data.loc[test_cells, inputgenes].values for inputgenes in self.predictors ]
+        Y_test = [ norm_data.loc[test_cells, targetgenes].values for targetgenes in self.targets ]
 
         print("Fitting with {} cells".format(norm_data.shape[0]))
         result = model.fit(X_train, Y_train,
@@ -213,36 +205,43 @@ class MultiNet:
                 imputed_only=False,
                 policy="restore"):
 
-        normalizer = Normalizer.fromName(self.normalization).fit(raw)
-        norm_raw = normalizer.transform(raw)
+        norm_raw = np.log1p(raw)
 
         inputs = [ norm_raw.loc[:,predictors].values.astype(np.float32)
                    for predictors in self.predictors ]
-        predicted = []
-        model = self.load()
-        predicted = model.predict(inputs)
 
-        predicted = pd.DataFrame(np.hstack(predicted),
+        model = self.load()
+
+        predicted = pd.DataFrame(np.hstack(model.predict(inputs)),
                                  index=raw.index,
                                  columns=self.targets.flatten())
 
         predicted = predicted.groupby(by=predicted.columns,axis=1).mean()
-        
         not_predicted = norm_raw.drop(self.targets.flatten(),axis=1)
 
-        imputed = pd.concat([predicted,not_predicted],axis=1).loc[raw.index,raw.columns]
-
+        imputed = (pd.concat([predicted,not_predicted],axis=1)
+                   .loc[raw.index,raw.columns]
+                   .values
+        )
         # To prevent overflow
-        imputed = imputed.mask( (imputed>2*norm_raw.values.max()) | imputed.isnull(), norm_raw)
+        imputed[ (imputed>2*norm_raw.values.max()) | (np.isnan(imputed)) ] = 0
+        # imputed = imputed.mask( (imputed>2*norm_raw.values.max()) | imputed.isnull(), norm_raw)
         # Convert back to counts
-        imputed = normalizer.transform(imputed,rev=True)        
+        imputed = np.expm1(imputed)
+        # imputed = normalizer.transform(imputed,rev=True)        
         
         if policy == "restore":
             print("Filling zeros")
-            imputed = imputed.mask(raw>0,raw)
+            mask = (raw.values>0)
+            imputed[mask] = raw.values[mask]
+            # imputed = imputed.mask(raw>0,raw)
         elif policy == "max":
             print("Imputing data with 'max' policy")
-            imputed = imputed.mask(raw>imputed,raw)
+            mask = (raw.values>imputed.values)
+            imputed[mask] = raw.values[mask]
+            # imputed = imputed.mask(raw>imputed,raw)
+
+        imputed = pd.DataFrame(imputed, index=raw.index, columns=raw.columns)
 
         if imputed_only:
             return imputed.loc[:,predicted.columns]
@@ -303,68 +302,6 @@ class MultiNet:
 
         return pearsonr(Y_hat.values.reshape(-1), Y.values.reshape(-1))
         
-
-if __name__ == '__main__':
-
-    from deepimpute.multinet import MultiNet as MN
-    np.random.seed(1234)
-
-    # Prepare data
-    raw = pd.read_csv('jurkat_dp0.05_2k-genes.csv',index_col=0).sample(frac=1).T
-
-    # New implementation of DeepImpute
-    model = MultiNet()
-    print("Starting multinet")
-    model.fit(raw)
-    targets = np.unique(model.targets.flatten())
-    pred = model.predict(raw)[targets].values
-
-    raw = raw.loc[:,targets]
-    
-    # Deepimpute
-    if not os.path.exists('dp_prediction.csv'):
-        model_DI = MN(ncores=20,loss='wMSE')
-        model_DI.fit(raw,NN_lim=2000)
-        pred_DI = model_DI.predict(raw,restore_pos_values=False)
-        pred_DI.to_csv('dp_prediction.csv')
-    else:
-        pred_DI = pd.read_csv('dp_prediction.csv',index_col=0)
-
-    pred_DI = pred_DI.loc[raw.index,raw.columns].values
-    
-    # Assessment
-    
-    truth = pd.read_csv('jurkat_filt-95.csv',index_col=0).loc[raw.index,raw.columns]
-    mask = truth != raw
-
-    y_true = np.log1p(truth.values.flatten())
-    y_hat = np.log1p(pred.flatten())
-    y_hat_DI = np.log1p(pred_DI.flatten())
-
-    indices = np.random.choice(len(y_true),100000,replace=False)
-    y_true = [y_true[i] for i in indices]
-    y_hat = [y_hat[i] for i in indices]
-    y_hat_DI = [y_hat_DI[i] for i in indices]
-
-    y_true_masked = np.log1p(truth.values[mask.values])
-    y_hat_masked = np.log1p(pred[mask.values])
-    y_hat_DI_masked = np.log1p(pred_DI[mask.values])
-
-    lims = [0,7]
-    
-    fig,ax = plt.subplots(2,2)
-    ax[0,0].scatter(y_true,y_hat,s=1)
-    ax[0,0].plot(lims,lims,'r-.')
-    ax[0,1].scatter(y_true_masked,y_hat_masked,s=1)    
-    ax[0,1].plot(lims,lims,'r-.')
-
-    ax[1,0].scatter(y_true,y_hat_DI,s=1)
-    ax[1,0].plot(lims,lims,'r-.')
-    ax[1,1].scatter(y_true_masked,y_hat_DI_masked,s=1)    
-    ax[1,1].plot(lims,lims,'r-.')
-
-    plt.show()
-
 
 
 

@@ -49,19 +49,6 @@ if __name__ == "__main__":
         default="0.5",
         help="Min Variance over mean ratio for gene exclusion. Gene with a VMR below ${minVMR} are discarded. Used if --limit is set to 'auto'. Default: 0.5",
     )
-    
-    # parser.add_argument(
-    #     "--noiseLevel",
-    #     type=str,
-    #     default="1",
-    #     help="Noise threshold for gene exclusion. Gene with ${minPct}% cells with a VMR below ${noise} are discarded. Used if --limit is set to 'auto'. Default: 1",
-    # )
-    # parser.add_argument(
-    #     "--minPct",
-    #     type=str,
-    #     default="0.01",
-    #     help="Threshold for genes exclusion. Gene with ${minPct}% cells below ${noise} count are discarded. Used if --limit is set to 'auto'. Default: 0.01",
-    # )        
     parser.add_argument(
         "--subset",
         type=float,
@@ -99,12 +86,6 @@ if __name__ == "__main__":
         default=0.2,
         help="Dropout rate for the hidden dropout layer (0<rate<1). Default: 0.2"
     )
-    # parser.add_argument(
-    #     "--nb-corr",
-    #     type=int,
-    #     default=20,
-    #     help="Number of input gene per target gene. Default: 20"
-    # )
     parser.add_argument(
         "--output-neurons",
         type=int,
