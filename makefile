@@ -1,4 +1,4 @@
-PYTHON_VERSION = $(VERSION)
+PYTHON_VERSION = 3
 
 reformat:
 	# Requires black: pip3 install black

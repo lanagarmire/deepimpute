@@ -21,7 +21,6 @@ class TestMultinet(unittest.TestCase):
             ],
             "loss": "wMSE",
             "sub_outputdim": 512,
-            "normalization": "log_or_exp",
             "seed": 123,
             "ncores": 2,
             "verbose": 1
