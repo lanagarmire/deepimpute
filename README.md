@@ -30,18 +30,18 @@ Command line:
 
 ```
 usage: deepImpute.py [-h] [-o O] [--cores CORES] [--cell-axis {rows,columns}]
-                     [--limit LIMIT] [--subset SUBSET]
+                     [--limit LIMIT] [--minVMR MINVMR] [--subset SUBSET]
                      [--learning-rate LEARNING_RATE] [--batch-size BATCH_SIZE]
                      [--max-epochs MAX_EPOCHS]
                      [--hidden-neurons HIDDEN_NEURONS]
-                     [--dropout-rate DROPOUT_RATE] [--nb-corr NB_CORR]
+                     [--dropout-rate DROPOUT_RATE]
                      [--output-neurons OUTPUT_NEURONS]
                      inputFile
-
+					 
 scRNA-seq data imputation using DeepImpute.
 
 positional arguments:
-  inputFile             Path to input data.
+  inputFile             Path to input data (raw counts).
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -63,7 +63,6 @@ optional arguments:
                         300
   --dropout-rate DROPOUT_RATE
                         Dropout rate for the hidden dropout layer (0<rate<1).
-  --nb-corr NB_CORR     Number of input gene per target gene. Default: 20
   --output-neurons OUTPUT_NEURONS
                         Number of output neurons per sub-network. Default: 500
 ```
@@ -78,15 +77,6 @@ imputed = deepImpute(data, NN_lim='auto', n_cores=16, cell_subset=1)
 ```
 
 A more detailed usage of deepImpute's functionality is available in the iPython Notebook notebook_example.ipynb
-
-### Docker
-
-The Dockerfile runs an Ubuntu image containing Python3, TensorFlow, Jupyter and DeepImpute. The following commands will build the image and then run it starting a Jupyter server. You can try the included notebook in the deepimpute/examples folder.
-
-```bash
-docker build -t deepimpute .
-docker run -p 8888:8888 -it deepimpute
-```
 
 ### Running the tests
 
