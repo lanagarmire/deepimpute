@@ -11,7 +11,7 @@ class TestDeepImpute(unittest.TestCase):
     """ """
 
     def test_all(self):
-        _ = deepImpute(test_data.rawData, ncores=4, NN_lim=1000)
+        _ = deepImpute(test_data.rawData, NN_lim=1000)
 
     def test_minExpressionLevel(self):
     	_ = deepImpute(test_data.rawData, ncores=4, minVMR=1)

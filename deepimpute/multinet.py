@@ -43,7 +43,7 @@ class MultiNet:
                  batch_size=64,
                  max_epochs=500,
                  patience=5,
-                 ncores=20,
+                 ncores=-1,
                  loss="wMSE",
                  output_prefix="/tmp/multinet",
                  sub_outputdim=512,
@@ -60,9 +60,16 @@ class MultiNet:
                               }
         self.sub_outputdim = sub_outputdim
         self.outputdir = "/tmp/{}-{}".format(output_prefix,generate_random_id())
-        self.ncores = ncores
         self.verbose = verbose
         self.seed = seed
+        self.setCores(ncores)
+
+    def setCores(self,ncores):
+        if ncores > 0:
+            self.ncores = ncores
+        else:
+            self.ncores = os.cpu_count()
+            print("Using all the cores ({})".format(self.ncores))
  
     def loadDefaultArchitecture(self):
         self.NN_parameters['architecture'] = [

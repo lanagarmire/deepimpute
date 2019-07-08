@@ -28,7 +28,7 @@ if __name__ == "__main__":
         help="Path to output data counts. Default: ./",
     )
     parser.add_argument(
-        "--cores", type=int, default=5, help="Number of cores. Default: 5"
+        "--cores", type=int, default=-1, help="Number of cores. Default: all available cores"
     )
     parser.add_argument(
         "--cell-axis",
