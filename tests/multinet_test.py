@@ -30,7 +30,7 @@ class TestMultinet(unittest.TestCase):
         model.fit(rawData)
         _ = model.predict(rawData,policy="restore")
 
-        print(model.score(rawData))
+        print(model.test_metrics)
 
 
 if __name__ == "__main__":

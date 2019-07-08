@@ -1,4 +1,5 @@
 import os,binascii
+import warnings
 
 import pandas as pd
 import numpy as np
@@ -161,7 +162,6 @@ class MultiNet:
         self.setPredictors(covariance_matrix,ntop=ntop)
 
         print("Normalization")
-        # normalizer = Normalizer.fromName(self.normalization).fit(raw)
         norm_data = np.log1p(raw).astype(np.float32) # normalizer.transform(raw)
 
         np.random.seed(self.seed)
@@ -197,6 +197,15 @@ class MultiNet:
         print("Stopped fitting after {} epochs".format(len(result.history['loss'])))
 
         self.save(model)
+
+        # Save some metrics on test data
+        Y_test_raw = np.hstack(Y_test).flatten()
+        Y_test_imputed = np.hstack(model.predict(X_test)).flatten()
+
+        self.test_metrics = {
+            'correlation': pearsonr(Y_test_raw,Y_test_imputed)[0],
+            'MSE': np.sum((Y_test_raw-Y_test_imputed)**2)/len(Y_test_raw)
+        }        
         
         return self
 
@@ -225,21 +234,17 @@ class MultiNet:
         )
         # To prevent overflow
         imputed[ (imputed>2*norm_raw.values.max()) | (np.isnan(imputed)) ] = 0
-        # imputed = imputed.mask( (imputed>2*norm_raw.values.max()) | imputed.isnull(), norm_raw)
         # Convert back to counts
         imputed = np.expm1(imputed)
-        # imputed = normalizer.transform(imputed,rev=True)        
         
         if policy == "restore":
             print("Filling zeros")
             mask = (raw.values>0)
             imputed[mask] = raw.values[mask]
-            # imputed = imputed.mask(raw>0,raw)
         elif policy == "max":
             print("Imputing data with 'max' policy")
             mask = (raw.values>imputed.values)
             imputed[mask] = raw.values[mask]
-            # imputed = imputed.mask(raw>imputed,raw)
 
         imputed = pd.DataFrame(imputed, index=raw.index, columns=raw.columns)
 
@@ -297,6 +302,9 @@ class MultiNet:
                   .format(i,len(np.unique(predictors)),len(targets)))
 
     def score(self,data,policy=None):
+        warnings.warn(
+            "This method is deprecated. Please use model.test_metrics to measure model accuracy instead",
+            DeprecationWarning)
         Y_hat = self.predict(data,policy=policy)
         Y = data.loc[Y_hat.index,Y_hat.columns]
 
