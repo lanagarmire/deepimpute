@@ -1,7 +1,3 @@
-import pandas as pd
-from deepimpute.multinet import MultiNet
-
-
 def deepImpute(
         data,
         NN_lim="auto",
@@ -11,12 +7,15 @@ def deepImpute(
         minVMR=0.5,
         **NN_params
 ):
+    from deepimpute.multinet import MultiNet
+
     multi = MultiNet(**NN_params)
     multi.fit(data, NN_lim=NN_lim, cell_subset=cell_subset, minVMR=minVMR)
     return multi.predict(data, imputed_only=imputed_only, policy=policy)
 
 if __name__ == "__main__":
     import argparse
+    import pandas as pd
 
     parser = argparse.ArgumentParser(
         description="scRNA-seq data imputation using DeepImpute."
