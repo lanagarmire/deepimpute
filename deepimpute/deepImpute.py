@@ -117,4 +117,8 @@ if __name__ == "__main__":
         minVMR=args.minVMR,
         NN_params=NN_params
     )
+
+    if args.cell_axis == "columns":
+        imputed = imputed.T
+        
     imputed.to_csv(args.o)
