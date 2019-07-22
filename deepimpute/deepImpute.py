@@ -105,8 +105,8 @@ if __name__ == "__main__":
         'ncores': args.cores,
         'sub_outputdim': args.output_neurons,
         'architecture': [
-            {"label": "dense", "activation": "relu", "nb_neurons": args.hidden_neurons},
-            {"label": "dropout", "activation": "dropout", "rate": args.dropout_rate}]
+            {"type": "dense", "activation": "relu", "neurons": args.hidden_neurons},
+            {"type": "dropout", "activation": "dropout", "rate": args.dropout_rate}]
     }
     
     imputed = deepImpute(
