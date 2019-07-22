@@ -44,7 +44,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--minVMR",
-        type=str,
+        type=float,
         default="0.5",
         help="Min Variance over mean ratio for gene exclusion. Gene with a VMR below ${minVMR} are discarded. Used if --limit is set to 'auto'. Default: 0.5",
     )
@@ -114,7 +114,7 @@ if __name__ == "__main__":
         NN_lim=args.limit,
         cell_subset=args.subset,
         minVMR=args.minVMR,
-        NN_params=NN_params
+        **NN_params
     )
 
     if args.cell_axis == "columns":

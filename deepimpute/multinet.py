@@ -73,7 +73,7 @@ class MultiNet:
  
     def loadDefaultArchitecture(self):
         self.NN_parameters['architecture'] = [
-                {"type": "dense", "neurons": 256, "activation": "relu"},
+                {"type": "dense", "nb_neurons": 256, "activation": "relu"},
                 {"type": "dropout", "rate": 0.2},
             ]
         
@@ -108,11 +108,11 @@ class MultiNet:
         outputs = inputs
 
         for layer in self.NN_parameters['architecture']:
-            if layer['type'].lower() == 'dense':
-                outputs = [ Dense(layer['neurons'],activation=layer['activation'])(output)
+            if layer['label'].lower() == 'dense':
+                outputs = [ Dense(layer['nb_neurons'],activation=layer['activation'])(output)
                             for output in outputs ]
 
-            elif layer['type'].lower() == 'dropout':
+            elif layer['label'].lower() == 'dropout':
                 outputs = [ Dropout(layer['rate'], seed=self.seed)(output)
                             for output in outputs] 
     
