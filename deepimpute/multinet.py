@@ -36,6 +36,28 @@ def wMSE(y_true,y_pred):
     weights = y_true
     return tf.reduce_mean(weights*tf.square(y_true-y_pred))
 
+def inspect_data(data):
+    # Check if there area any duplicated cell/gene labels
+    
+    if sum(data.index.duplicated()):
+        print("ERROR: duplicated cell labels. Please provide unique cell labels.")
+        exit(1)
+        
+    if sum(data.columns.duplicated()):
+        print("ERROR: duplicated gene labels. Please provide unique gene labels.")
+        exit(1)
+        
+    max_value = np.max(data.values)
+    if max_value < 10:
+        print("ERROR: max value = {}. Is your data log-transformed? Please provide raw counts"
+              .format(max_value))
+        exit(1)
+        
+    print("Input dataset is {} cells (rows) and {} genes (columns)"
+          .format(*data.shape))
+    print("First 3 rows and columns:")
+    print(data.iloc[:3,:3])
+
 class MultiNet:
 
     def __init__(self,
@@ -143,6 +165,9 @@ class MultiNet:
             minVMR=0.5,
             mode='random',
     ):
+        
+        inspect_data(raw)
+        
         if self.seed is not None:
             np.random.seed(self.seed)
 
@@ -243,7 +268,7 @@ class MultiNet:
         imputed[ (imputed>2*norm_raw.values.max()) | (np.isnan(imputed)) ] = 0
         # Convert back to counts
         imputed = np.expm1(imputed)
-        
+
         if policy == "restore":
             print("Filling zeros")
             mask = (raw.values>0)
