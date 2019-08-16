@@ -275,7 +275,7 @@ class MultiNet:
             imputed[mask] = raw.values[mask]
         elif policy == "max":
             print("Imputing data with 'max' policy")
-            mask = (raw.values>imputed.values)
+            mask = (raw.values>imputed)
             imputed[mask] = raw.values[mask]
 
         imputed = pd.DataFrame(imputed, index=raw.index, columns=raw.columns)
