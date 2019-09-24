@@ -32,8 +32,11 @@ def get_distance_matrix(raw):
                                      columns=potential_pred).fillna(0)
     return covariance_matrix
 
-def wMSE(y_true,y_pred):
-    weights = y_true
+def wMSE(y_true,y_pred,binary=False):
+    if binary:
+        weights = tf.cast(y_true>0,tf.float32)
+    else:
+        weights = y_true
     return tf.reduce_mean(weights*tf.square(y_true-y_pred))
 
 def inspect_data(data):
@@ -133,11 +136,9 @@ class MultiNet:
             if layer['type'].lower() == 'dense':
                 outputs = [ Dense(layer['neurons'],activation=layer['activation'])(output)
                             for output in outputs ]
-
             elif layer['type'].lower() == 'dropout':
                 outputs = [ Dropout(layer['rate'], seed=self.seed)(output)
                             for output in outputs] 
-    
             else:
                 print("Unknown layer type.")
 
@@ -146,11 +147,20 @@ class MultiNet:
                 
         model = Model(inputs=inputs,outputs=outputs)
 
-        try:
+        loss = self.NN_parameters['loss']
+
+        if loss in [ k for k,v in globals().items() if callable(v) ]:
+            # if loss is a defined function
             loss = eval(self.NN_parameters['loss'])
-        except:
-            loss = getattr(keras.losses, self.NN_parameters['loss'])
-    
+            
+        if not callable(loss):
+            # it is defined in Keras
+            if hasattr(keras.losses,loss):
+                loss = getattr(keras.losses, loss)                
+            else:
+                print('Unknown loss: {}. Aborting.'.format(loss))
+                exit(1)
+                    
         model.compile(optimizer=keras.optimizers.Adam(lr=self.NN_parameters['learning_rate']),
                       loss=loss)
 
@@ -226,13 +236,19 @@ class MultiNet:
                            callbacks=[EarlyStopping(monitor='val_loss',
                                                     patience=self.NN_parameters["patience"])],
                            verbose=self.verbose)
-        print("Stopped fitting after {} epochs".format(len(result.history['loss'])))
+
+        self.trained_epochs = len(result.history['loss'])
+        print("Stopped fitting after {} epochs".format(self.trained_epochs))
 
         self.save(model)
 
         # Save some metrics on test data
         Y_test_raw = np.hstack(Y_test).flatten()
         Y_test_imputed = np.hstack(model.predict(X_test)).flatten()
+
+        # Keep only positive values (since negative values could be dropouts)
+        Y_test_imputed = Y_test_imputed[Y_test_raw>0]
+        Y_test_raw = Y_test_raw[Y_test_raw>0]
 
         self.test_metrics = {
             'correlation': pearsonr(Y_test_raw,Y_test_imputed)[0],
@@ -275,7 +291,7 @@ class MultiNet:
             imputed[mask] = raw.values[mask]
         elif policy == "max":
             print("Imputing data with 'max' policy")
-            mask = (raw.values>imputed.values)
+            mask = (raw.values>imputed)
             imputed[mask] = raw.values[mask]
 
         imputed = pd.DataFrame(imputed, index=raw.index, columns=raw.columns)
