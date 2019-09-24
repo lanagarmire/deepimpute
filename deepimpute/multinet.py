@@ -32,9 +32,9 @@ def get_distance_matrix(raw):
                                      columns=potential_pred).fillna(0)
     return covariance_matrix
 
-def wMSE(y_true,y_pred,binary=False):
+def wMSE(y_true, y_pred, binary=False):
     if binary:
-        weights = tf.cast(y_true>0,tf.float32)
+        weights = tf.cast(y_true>0, tf.float32)
     else:
         weights = y_true
     return tf.reduce_mean(weights*tf.square(y_true-y_pred))
@@ -84,12 +84,12 @@ class MultiNet:
                               "patience": patience
                               }
         self.sub_outputdim = sub_outputdim
-        self.outputdir = "/tmp/{}-{}".format(output_prefix,generate_random_id())
+        self.outputdir = "/tmp/{}-{}".format(output_prefix, generate_random_id())
         self.verbose = verbose
         self.seed = seed
         self.setCores(ncores)
 
-    def setCores(self,ncores):
+    def setCores(self, ncores):
         if ncores > 0:
             self.ncores = ncores
         else:
@@ -102,7 +102,7 @@ class MultiNet:
                 {"type": "dropout", "rate": 0.2},
             ]
         
-    def save(self,model):
+    def save(self, model):
         os.system("mkdir -p {}".format(self.outputdir))
         
         model_json = model.to_json()
@@ -123,7 +123,7 @@ class MultiNet:
 
         return model
         
-    def build(self,inputdims):
+    def build(self, inputdims):
         if self.NN_parameters['architecture'] is None:
             self.loadDefaultArchitecture()
 
@@ -134,7 +134,7 @@ class MultiNet:
 
         for layer in self.NN_parameters['architecture']:
             if layer['type'].lower() == 'dense':
-                outputs = [ Dense(layer['neurons'],activation=layer['activation'])(output)
+                outputs = [ Dense(layer['neurons'], activation=layer['activation'])(output)
                             for output in outputs ]
             elif layer['type'].lower() == 'dropout':
                 outputs = [ Dropout(layer['rate'], seed=self.seed)(output)
@@ -142,20 +142,20 @@ class MultiNet:
             else:
                 print("Unknown layer type.")
 
-        outputs = [ Dense(self.sub_outputdim,activation="softplus")(output)
-                    for output in outputs]
+        outputs = [Dense(self.sub_outputdim, activation="softplus")(output)
+                   for output in outputs]
                 
-        model = Model(inputs=inputs,outputs=outputs)
+        model = Model(inputs=inputs, outputs=outputs)
 
         loss = self.NN_parameters['loss']
 
-        if loss in [ k for k,v in globals().items() if callable(v) ]:
+        if loss in [k for k, v in globals().items() if callable(v)]:
             # if loss is a defined function
             loss = eval(self.NN_parameters['loss'])
             
         if not callable(loss):
             # it is defined in Keras
-            if hasattr(keras.losses,loss):
+            if hasattr(keras.losses, loss):
                 loss = getattr(keras.losses, loss)                
             else:
                 print('Unknown loss: {}. Aborting.'.format(loss))
@@ -196,12 +196,12 @@ class MultiNet:
             if n_genes % self.sub_outputdim != 0:
                 print("The number of input genes is not a multiple of {}. Filling with other genes.".format(n_genes))
                 fill_genes = gene_metric[:(self.sub_outputdim-n_genes)]
-                genes_to_impute = np.concatenate((genes_to_impute,fill_genes))
+                genes_to_impute = np.concatenate((genes_to_impute, fill_genes))
 
         covariance_matrix = get_distance_matrix(raw)
         
         self.setTargets(raw.reindex(columns=genes_to_impute), mode=mode)
-        self.setPredictors(covariance_matrix,ntop=ntop)
+        self.setPredictors(covariance_matrix, ntop=ntop)
 
         print("Normalization")
         norm_data = np.log1p(raw).astype(np.float32) # normalizer.transform(raw)
@@ -217,16 +217,16 @@ class MultiNet:
         K.set_session(session)
 
         print("Building network")
-        model = self.build([ len(genes) for genes in self.predictors ])
+        model = self.build([len(genes) for genes in self.predictors])
 
         test_cells = np.random.choice(norm_data.index, int(0.05 * norm_data.shape[0]), replace=False)
         train_cells = np.setdiff1d(norm_data.index, test_cells)
 
-        X_train = [ norm_data.loc[train_cells, inputgenes].values for inputgenes in self.predictors ]
-        Y_train = [ norm_data.loc[train_cells, targetgenes].values for targetgenes in self.targets ]
+        X_train = [norm_data.loc[train_cells, inputgenes].values for inputgenes in self.predictors]
+        Y_train = [norm_data.loc[train_cells, targetgenes].values for targetgenes in self.targets]
         
-        X_test = [ norm_data.loc[test_cells, inputgenes].values for inputgenes in self.predictors ]
-        Y_test = [ norm_data.loc[test_cells, targetgenes].values for targetgenes in self.targets ]
+        X_test = [norm_data.loc[test_cells, inputgenes].values for inputgenes in self.predictors]
+        Y_test = [norm_data.loc[test_cells, targetgenes].values for targetgenes in self.targets]
 
         print("Fitting with {} cells".format(norm_data.shape[0]))
         result = model.fit(X_train, Y_train,
@@ -269,35 +269,37 @@ class MultiNet:
 
         model = self.load()
 
-        predicted = pd.DataFrame(np.hstack(model.predict(inputs)),
-                                 index=raw.index,
-                                 columns=self.targets.flatten())
+        predicted = model.predict(inputs)
+        if len(inputs)>1:
+            predicted = np.hstack(predicted)
+        
+        predicted = pd.DataFrame(predicted, index=raw.index, columns=self.targets.flatten())
 
-        predicted = predicted.groupby(by=predicted.columns,axis=1).mean()
-        not_predicted = norm_raw.drop(self.targets.flatten(),axis=1)
+        predicted = predicted.groupby(by=predicted.columns, axis=1).mean()
+        not_predicted = norm_raw.drop(self.targets.flatten(), axis=1)
 
         imputed = (pd.concat([predicted,not_predicted],axis=1)
-                   .loc[raw.index,raw.columns]
-                   .values
-        )
+                   .loc[raw.index, raw.columns]
+                   .values)
+        
         # To prevent overflow
-        imputed[ (imputed>2*norm_raw.values.max()) | (np.isnan(imputed)) ] = 0
+        imputed[ (imputed > 2*norm_raw.values.max()) | (np.isnan(imputed)) ] = 0
         # Convert back to counts
         imputed = np.expm1(imputed)
 
         if policy == "restore":
             print("Filling zeros")
-            mask = (raw.values>0)
+            mask = (raw.values > 0)
             imputed[mask] = raw.values[mask]
         elif policy == "max":
             print("Imputing data with 'max' policy")
-            mask = (raw.values>imputed)
+            mask = (raw.values > imputed)
             imputed[mask] = raw.values[mask]
 
         imputed = pd.DataFrame(imputed, index=raw.index, columns=raw.columns)
 
         if imputed_only:
-            return imputed.loc[:,predicted.columns]
+            return imputed.loc[:, predicted.columns]
         else:
             return imputed
         
@@ -316,7 +318,7 @@ class MultiNet:
 
         if rest > 0:
             fill_genes = np.random.choice(gene_metric.index, rest)
-            genes_to_impute = np.concatenate([genes_to_impute,fill_genes])
+            genes_to_impute = np.concatenate([genes_to_impute, fill_genes])
 
         print("{} genes selected for imputation".format(len(genes_to_impute)))
 
@@ -327,21 +329,21 @@ class MultiNet:
         n_subsets = int(data.shape[1]/self.sub_outputdim)
 
         if mode == 'progressive':
-            self.targets = data.columns.values.reshape([n_subsets,self.sub_outputdim])
+            self.targets = data.columns.values.reshape([n_subsets, self.sub_outputdim])
         else:
             self.targets = np.random.choice(data.columns,
-                                            [n_subsets,self.sub_outputdim],
+                                            [n_subsets, self.sub_outputdim],
                                             replace=False)
         
-    def setPredictors(self,covariance_matrix,ntop=5):
+    def setPredictors(self, covariance_matrix, ntop=5):
         
         self.predictors = []
         for i,targets in enumerate(self.targets):
             subMatrix = ( covariance_matrix
                           .loc[targets]
-                          .drop(np.intersect1d(targets,covariance_matrix.columns),axis=1)
+                          .drop(np.intersect1d(targets, covariance_matrix.columns), axis=1)
                           )
-            sorted_idx = np.argsort(-subMatrix.values,axis=1)
+            sorted_idx = np.argsort(-subMatrix.values, axis=1)
             predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
 
             self.predictors.append(np.unique(predictors))
@@ -349,12 +351,12 @@ class MultiNet:
             print("Net {}: {} predictors, {} targets"
                   .format(i,len(np.unique(predictors)),len(targets)))
 
-    def score(self,data,policy=None):
+    def score(self, data, policy=None):
         warnings.warn(
             "This method is deprecated. Please use model.test_metrics to measure model accuracy instead",
             DeprecationWarning)
-        Y_hat = self.predict(data,policy=policy)
-        Y = data.loc[Y_hat.index,Y_hat.columns]
+        Y_hat = self.predict(data, policy=policy)
+        Y = data.loc[Y_hat.index, Y_hat.columns]
 
         return pearsonr(Y_hat.values.reshape(-1), Y.values.reshape(-1))
         
