@@ -1,5 +1,6 @@
-import os,binascii
+import os
 import warnings
+import tempfile
 
 import pandas as pd
 import numpy as np
@@ -15,13 +16,6 @@ import keras.losses
 import tensorflow as tf
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-def generate_random_id():
-    rd_number = binascii.b2a_hex(os.urandom(3))
-
-    if type(rd_number) is bytes:
-        rd_number = rd_number.decode()
-    return rd_number
 
 def get_distance_matrix(raw):
 
@@ -70,7 +64,7 @@ class MultiNet:
                  patience=5,
                  ncores=-1,
                  loss="wMSE",
-                 output_prefix="/tmp/multinet",
+                 output_prefix=tempfile.mkdtemp(),
                  sub_outputdim=512,
                  verbose=1,
                  seed=1234,
@@ -81,10 +75,9 @@ class MultiNet:
                               "loss": loss,
                               "architecture": architecture,
                               "max_epochs": max_epochs,
-                              "patience": patience
-                              }
+                              "patience": patience}
         self.sub_outputdim = sub_outputdim
-        self.outputdir = "/tmp/{}-{}".format(output_prefix, generate_random_id())
+        self.outputdir = output_prefix
         self.verbose = verbose
         self.seed = seed
         self.setCores(ncores)
