@@ -17,9 +17,16 @@ import tensorflow as tf
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-def get_distance_matrix(raw):
+def get_distance_matrix(raw, n_pred=None):
 
-    potential_pred = raw.columns[raw.std() > 0]
+    means = raw.mean()
+    VMR = (raw.std()[means>0] / raw.mean()[means >0]).sort_values(ascending=False)
+    
+    if n_pred is None:
+        potential_pred = raw.columns[VMR > 0]
+    else:
+        print("Using {} predictors".format(n_pred))
+        potential_pred = VMR.index[:n_pred]
     
     covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(raw.T.loc[potential_pred])),
                                      index=potential_pred,
@@ -164,6 +171,7 @@ class MultiNet:
             cell_subset=1,
             NN_lim=None,
             genes_to_impute=None,
+            n_pred=None,
             ntop=5,
             minVMR=0.5,
             mode='random',
@@ -191,7 +199,7 @@ class MultiNet:
                 fill_genes = gene_metric[:(self.sub_outputdim-n_genes)]
                 genes_to_impute = np.concatenate((genes_to_impute, fill_genes))
 
-        covariance_matrix = get_distance_matrix(raw)
+        covariance_matrix = get_distance_matrix(raw, n_pred=n_pred)
         
         self.setTargets(raw.reindex(columns=genes_to_impute), mode=mode)
         self.setPredictors(covariance_matrix, ntop=ntop)

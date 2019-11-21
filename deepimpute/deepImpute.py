@@ -5,12 +5,13 @@ def deepImpute(
         imputed_only=False,
         policy="restore",
         minVMR=0.5,
+        n_pred=None,
         **NN_params
 ):
     from deepimpute.multinet import MultiNet
 
     multi = MultiNet(**NN_params)
-    multi.fit(data, NN_lim=NN_lim, cell_subset=cell_subset, minVMR=minVMR)
+    multi.fit(data, NN_lim=NN_lim, cell_subset=cell_subset, minVMR=minVMR, n_pred=n_pred)
     return multi.predict(data, imputed_only=imputed_only, policy=policy)
 
 if __name__ == "__main__":
@@ -91,6 +92,12 @@ if __name__ == "__main__":
         default=512,
         help="Number of output neurons per sub-network. Default: 512"
     )
+    parser.add_argument(
+        "--n_predictors",
+        type=int,
+        default=None,
+        help="Number of predictors to consider. Consider using this parameter if your RAM is limited or if you have a high number of features. Default: All genes with nonzero VMR"
+    )
 
     args = parser.parse_args()
 
@@ -114,6 +121,7 @@ if __name__ == "__main__":
         NN_lim=args.limit,
         cell_subset=args.subset,
         minVMR=args.minVMR,
+        n_pred=args.n_predictors,
         **NN_params
     )
 
