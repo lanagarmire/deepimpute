@@ -93,7 +93,7 @@ if __name__ == "__main__":
         help="Number of output neurons per sub-network. Default: 512"
     )
     parser.add_argument(
-        "--n_predictors",
+        "--n_pred",
         type=int,
         default=None,
         help="Number of predictors to consider. Consider using this parameter if your RAM is limited or if you have a high number of features. Default: All genes with nonzero VMR"
