@@ -307,7 +307,7 @@ class MultiNet:
         n_subsets = int(np.ceil(NN_lim / self.sub_outputdim))
         genes_to_impute = gene_metric.index[:n_subsets*self.sub_outputdim]
 
-        rest = (self.sub_outputdim*n_subsets) % len(genes_to_impute)
+        rest = self.sub_outputdim - (len(genes_to_impute) % self.sub_outputdim)
 
         if rest > 0:
             fill_genes = np.random.choice(gene_metric.index, rest)
