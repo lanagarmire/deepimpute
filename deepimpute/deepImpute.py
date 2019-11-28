@@ -121,7 +121,7 @@ if __name__ == "__main__":
         NN_lim=args.limit,
         cell_subset=args.subset,
         minVMR=args.minVMR,
-        n_pred=args.n_predictors,
+        n_pred=args.n_pred,
         **NN_params
     )
 
