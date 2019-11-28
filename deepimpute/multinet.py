@@ -19,14 +19,14 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 def get_distance_matrix(raw, n_pred=None):
 
-    means = raw.mean()
-    VMR = (raw.std()[means>0] / raw.mean()[means >0]).sort_values(ascending=False)
+    VMR = raw.std() / raw.mean()
+    VMR[np.isinf(VMR)] = 0
     
     if n_pred is None:
         potential_pred = raw.columns[VMR > 0]
     else:
         print("Using {} predictors".format(n_pred))
-        potential_pred = VMR.index[:n_pred]
+        potential_pred = VMR.sort_values(ascending=False).index[:n_pred]
     
     covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(raw.T.loc[potential_pred])),
                                      index=potential_pred,
