@@ -16,7 +16,6 @@ import keras.losses
 import tensorflow as tf
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-os.environ['CUDA_VISIBLE_DEVICES'] = ""
 
 def get_distance_matrix(raw, n_pred=None):
 
