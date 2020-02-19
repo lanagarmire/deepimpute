@@ -345,9 +345,9 @@ class MultiNet:
                           .drop(np.intersect1d(targets, covariance_matrix.columns), axis=1)
                           )
             sorted_idx = np.argsort(-subMatrix.values, axis=1)
-            predictors = subMatrix.columns[sorted_idx[:,:ntop]].values.flatten()
+            predictors = subMatrix.columns[sorted_idx[:,:ntop].flatten()]
 
-            self.predictors.append(np.unique(predictors))
+            self.predictors.append(predictors.unique())
 
             print("Net {}: {} predictors, {} targets"
                   .format(i,len(np.unique(predictors)),len(targets)))
