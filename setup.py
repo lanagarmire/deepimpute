@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = "1.0.0"
+VERSION = "1.1"
 
 setup(
     name="deepimpute",
@@ -12,6 +12,7 @@ setup(
     author="Cedric Aridakessian",
     author_email="carisdak@hawaii.edu",
     url="",
+    entry_points={'console_scripts': ['deepImpute=deepimpute.deepImpute:deepImpute']},
     license="MIT",
     packages=find_packages(exclude=["examples", "tests"]),
     include_package_data=True,

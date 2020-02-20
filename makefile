@@ -26,6 +26,7 @@ coverage:
 	coverage${PYTHON_VERSION} html
 	echo "Results in: file://${CURDIR}/htmlcov/index.html"
 
-test-mp-hang-bug:
-	# This triggers TensorFlow issue #8220
-	python${PYTHON_VERSION} -m unittest discover -s deepimpute -p '*_test.py'
+publish:
+	pip install .
+	python setup.py sdist
+	twine upload dist/*

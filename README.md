@@ -14,7 +14,14 @@ These instructions will get you a copy of the project up and running on your loc
 
 ### Installing
 
-To install DeepImpute, you only need to download the git repository at https://github.com/lanagarmire/deepimpute and install it using pip:
+You can install DeepImpute's latest release using pip with the following command:
+
+```bash
+pip install deepimpute
+```
+
+To install the latest GitHub version, you can also clone this directory and
+install it: 
 
 ```bash
 git clone https://github.com/lanagarmire/deepimpute
@@ -29,14 +36,15 @@ DeepImpute can be used either on the command line or as a Python package.
 Command line:
 
 ```
-usage: deepImpute.py [-h] [-o O] [--cores CORES] [--cell-axis {rows,columns}]
-                     [--limit LIMIT] [--minVMR MINVMR] [--subset SUBSET]
-                     [--learning-rate LEARNING_RATE] [--batch-size BATCH_SIZE]
-                     [--max-epochs MAX_EPOCHS]
-                     [--hidden-neurons HIDDEN_NEURONS]
-                     [--dropout-rate DROPOUT_RATE]
-                     [--output-neurons OUTPUT_NEURONS]
-                     inputFile
+usage: deepImpute [-h] [-o OUTPUT] [--cores CORES]
+                  [--cell-axis {rows,columns}] [--limit LIMIT]
+                  [--minVMR MINVMR] [--subset SUBSET]
+                  [--learning-rate LEARNING_RATE] [--batch-size BATCH_SIZE]
+                  [--max-epochs MAX_EPOCHS] [--hidden-neurons HIDDEN_NEURONS]
+                  [--dropout-rate DROPOUT_RATE]
+                  [--output-neurons OUTPUT_NEURONS] [--n_pred N_PRED]
+                  [--policy POLICY]
+                  inputFile
 
 scRNA-seq data imputation using DeepImpute.
 
@@ -45,7 +53,8 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  -o O                  Path to output data counts. Default: ./
+  -o OUTPUT, --output OUTPUT
+                        Path to output data counts. Default: ./imputed.csv
   --cores CORES         Number of cores. Default: all available cores
   --cell-axis {rows,columns}
                         Cell dimension in the matrix. Default: rows
@@ -68,16 +77,26 @@ optional arguments:
                         Dropout rate for the hidden dropout layer (0<rate<1).
                         Default: 0.2
   --output-neurons OUTPUT_NEURONS
-                        Number of output neurons per sub-network. Default: 512```
+                        Number of output neurons per sub-network. Default: 512
+  --n_pred N_PRED       Number of predictors to consider. Consider using this
+                        parameter if your RAM is limited or if you have a high
+                        number of features. Default: All genes with nonzero
+                        VMR
+  --policy POLICY       Whether to restore positive values from the raw
+                        dataset or keep the max between the imputed values and
+                        the raw values. Choices are ['restore', 'max'].
+                        Default: restore
 ```
 
 Python package:
 
 ```python
-from deepimpute.deepImpute import deepImpute
+from deepimpute.multinet import MultiNet
 
 data = pd.read_csv('examples/test.csv', index_col=0) # dimension = (cells x genes)
-imputed = deepImpute(data, NN_lim='auto', n_cores=16, cell_subset=1)
+model = MultiNet()
+model.fit(data)
+imputed = model.predict(data)
 ```
 
 A more detailed usage of deepImpute's functionality is available in the iPython Notebook notebook_example.ipynb
