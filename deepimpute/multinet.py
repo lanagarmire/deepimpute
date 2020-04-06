@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import pearsonr
 
-import keras
+import tensorflow.keras as keras
 from keras import backend as K
 from keras.models import Model,model_from_json
 from keras.layers import Dense,Dropout,Input
@@ -160,7 +160,7 @@ class MultiNet:
             else:
                 print('Unknown loss: {}. Aborting.'.format(loss))
                 exit(1)
-                    
+
         model.compile(optimizer=keras.optimizers.Adam(lr=self.NN_parameters['learning_rate']),
                       loss=loss)
 
@@ -189,6 +189,7 @@ class MultiNet:
                 raw = raw.sample(cell_subset)
 
         gene_metric = (raw.var()/(1+raw.mean())).sort_values(ascending=False)
+        gene_metric = gene_metric[gene_metric > 0]
 
         if genes_to_impute is None:
             genes_to_impute = self.filter_genes(gene_metric, minVMR, NN_lim=NN_lim)
@@ -200,7 +201,7 @@ class MultiNet:
                 genes_to_impute = np.concatenate((genes_to_impute, fill_genes))
 
         covariance_matrix = get_distance_matrix(raw, n_pred=n_pred)
-        
+
         self.setTargets(raw.reindex(columns=genes_to_impute), mode=mode)
         self.setPredictors(covariance_matrix, ntop=ntop)
 
@@ -208,14 +209,10 @@ class MultiNet:
         norm_data = np.log1p(raw).astype(np.float32) # normalizer.transform(raw)
 
         np.random.seed(self.seed)
-        tf.set_random_seed(self.seed)
+        tf.random.set_seed(self.seed)
         
-        config = tf.ConfigProto(intra_op_parallelism_threads=self.ncores,
-                                inter_op_parallelism_threads=self.ncores,
-                                use_per_session_threads=True,
-                                allow_soft_placement=True, device_count = {'CPU': self.ncores})
-        session = tf.Session(config=config)
-        K.set_session(session)
+        tf.config.threading.set_inter_op_parallelism_threads(self.ncores)
+        tf.config.threading.set_intra_op_parallelism_threads(self.ncores)
 
         print("Building network")
         model = self.build([len(genes) for genes in self.predictors])
@@ -255,7 +252,7 @@ class MultiNet:
             'correlation': pearsonr(Y_test_raw,Y_test_imputed)[0],
             'MSE': np.sum((Y_test_raw-Y_test_imputed)**2)/len(Y_test_raw)
         }        
-        
+
         return self
 
     def predict(self,
@@ -337,7 +334,6 @@ class MultiNet:
                                             replace=False)
         
     def setPredictors(self, covariance_matrix, ntop=5):
-        
         self.predictors = []
         for i,targets in enumerate(self.targets):
             subMatrix = ( covariance_matrix

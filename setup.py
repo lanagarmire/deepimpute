@@ -19,10 +19,10 @@ setup(
     zip_safe=False,
     install_requires=[
         "numpy",
-        "pandas",
+        "pandas>=1.0",
         "scipy",
         "sklearn",
-        "tensorflow==1.15rc1",
+        "tensorflow>=2.0",
         "configparser",
         "keras"
     ],
