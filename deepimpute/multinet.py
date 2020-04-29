@@ -197,7 +197,7 @@ class MultiNet:
             n_genes = len(genes_to_impute)
             if n_genes % self.sub_outputdim != 0:
                 print("The number of input genes is not a multiple of {}. Filling with other genes.".format(n_genes))
-                fill_genes = gene_metric[:(self.sub_outputdim-n_genes)]
+                fill_genes = gene_metric.index[:(self.sub_outputdim-n_genes)]
                 genes_to_impute = np.concatenate((genes_to_impute, fill_genes))
 
         covariance_matrix = get_distance_matrix(raw, n_pred=n_pred)
