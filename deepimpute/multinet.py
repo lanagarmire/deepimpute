@@ -27,7 +27,7 @@ def get_distance_matrix(raw, n_pred=None):
     else:
         print("Using {} predictors".format(n_pred))
         potential_pred = VMR.sort_values(ascending=False).index[:n_pred]
-    
+
     covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(raw.T.loc[potential_pred])),
                                      index=potential_pred,
                                      columns=potential_pred).fillna(0)
@@ -98,7 +98,7 @@ class MultiNet:
  
     def loadDefaultArchitecture(self):
         self.NN_parameters['architecture'] = [
-                {"type": "dense", "neurons": 256, "activation": "relu"},
+                {"type": "dense", "neurons": self.sub_outputdim//2, "activation": "relu"},
                 {"type": "dropout", "rate": 0.2},
             ]
         
@@ -112,7 +112,7 @@ class MultiNet:
             
         # serialize weights to HDF5
         model.save_weights("{}/model.h5".format(self.outputdir))
-        print("Saved model to disk")
+        print("Saved model to disk in {}".format(self.outputdir))
 
     def load(self):
         json_file = open('{}/model.json'.format(self.outputdir), 'r')
@@ -194,11 +194,19 @@ class MultiNet:
         if genes_to_impute is None:
             genes_to_impute = self.filter_genes(gene_metric, minVMR, NN_lim=NN_lim)
         else:
+            # Make the number of genes to impute a multiple of the network output dim
             n_genes = len(genes_to_impute)
             if n_genes % self.sub_outputdim != 0:
                 print("The number of input genes is not a multiple of {}. Filling with other genes.".format(n_genes))
-                fill_genes = gene_metric.index[:(self.sub_outputdim-n_genes)]
-                genes_to_impute = np.concatenate((genes_to_impute, fill_genes))
+                fill_genes = gene_metric.index[:self.sub_outputdim-n_genes]
+
+                if len(fill_genes) < self.sub_outputdim-n_genes:
+                    # Not enough genes in gene_metric. Sample with replacement
+                    rest = self.sub_outputdim - n_genes - len(fill_genes)
+                    fill_genes = np.concatenate([fill_genes,
+                                                 np.random.choice(gene_metric.index, rest, replace=True)])
+
+                genes_to_impute = np.concatenate([genes_to_impute, fill_genes])
 
         covariance_matrix = get_distance_matrix(raw, n_pred=n_pred)
 
@@ -335,10 +343,18 @@ class MultiNet:
         
     def setPredictors(self, covariance_matrix, ntop=5):
         self.predictors = []
+        
         for i,targets in enumerate(self.targets):
+
+            genes_not_in_target = np.setdiff1d(targets, covariance_matrix.columns)
+
+            if genes_not_in_target.size == 0:
+                warnings.warn('Warning: number of target genes lower than output dim. Consider lowering down the sub_outputdim parameter',
+                              UserWarning)
+                genes_not_in_target = covariance_matrix.columns
+            
             subMatrix = ( covariance_matrix
-                          .loc[targets]
-                          .drop(np.intersect1d(targets, covariance_matrix.columns), axis=1)
+                          .loc[targets, genes_not_in_target]
                           )
             sorted_idx = np.argsort(-subMatrix.values, axis=1)
             predictors = subMatrix.columns[sorted_idx[:,:ntop].flatten()]
