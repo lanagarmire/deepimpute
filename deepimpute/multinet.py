@@ -346,7 +346,7 @@ class MultiNet:
         
         for i,targets in enumerate(self.targets):
 
-            genes_not_in_target = np.setdiff1d(targets, covariance_matrix.columns)
+            genes_not_in_target = np.setdiff1d(covariance_matrix.columns, targets)
 
             if genes_not_in_target.size == 0:
                 warnings.warn('Warning: number of target genes lower than output dim. Consider lowering down the sub_outputdim parameter',
