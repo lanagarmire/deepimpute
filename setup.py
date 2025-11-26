@@ -21,7 +21,7 @@ setup(
         "numpy",
         "pandas>=1.0",
         "scipy",
-        "sklearn",
+        "scikit-learn",
         "tensorflow>=2.0",
         "configparser",
         "keras"

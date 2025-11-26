@@ -1,4 +1,4 @@
-import os
+import os, gc
 import warnings
 import tempfile
 
@@ -23,11 +23,11 @@ def get_distance_matrix(raw, n_pred=None):
     VMR[np.isinf(VMR)] = 0
     
     if n_pred is None:
-        potential_pred = raw.columns[VMR > 0]
+        potential_pred = raw.columns # [VMR > 0]
     else:
         print("Using {} predictors".format(n_pred))
         potential_pred = VMR.sort_values(ascending=False).index[:n_pred]
-
+    
     covariance_matrix = pd.DataFrame(np.abs(np.corrcoef(raw.T.loc[potential_pred])),
                                      index=potential_pred,
                                      columns=potential_pred).fillna(0)
@@ -101,7 +101,7 @@ class MultiNet:
                 {"type": "dense", "neurons": self.sub_outputdim//2, "activation": "relu"},
                 {"type": "dropout", "rate": 0.2},
             ]
-        
+    
     def save(self, model):
         os.system("mkdir -p {}".format(self.outputdir))
         
@@ -160,11 +160,32 @@ class MultiNet:
             else:
                 print('Unknown loss: {}. Aborting.'.format(loss))
                 exit(1)
-
-        model.compile(optimizer=keras.optimizers.Adam(lr=self.NN_parameters['learning_rate']),
+        try:
+            model.compile(optimizer=keras.optimizers.Adam(learning_rate=self.NN_parameters['learning_rate']),
+                      loss=loss)
+        except:
+            model.compile(optimizer=keras.optimizers.Adam(lr=self.NN_parameters['learning_rate']),
                       loss=loss)
 
         return model
+
+    def make_dataset(self, df, predictors, targets, batch_size, shuffle=True):
+        # df: your norm_data DataFrame
+        cell_idx = np.arange(len(df))
+        ds = tf.data.Dataset.from_tensor_slices(cell_idx)
+        if shuffle:
+            ds = ds.shuffle(buffer_size=len(cell_idx), seed=self.seed)
+        def _fetch(i):
+            row = df.iloc[i]         # Pandas Series
+            # stack only the columns you need
+            x = [row[input_genes].values.astype('float32') for input_genes in predictors]
+            y = [row[target_genes].values.astype('float32') for target_genes in targets]
+            return tuple(x), tuple(y)
+        ds = ds.map(lambda i: tf.py_function(_fetch, [i], 
+                    [tf.float32]*len(predictors), [tf.float32]*len(targets)),
+                    num_parallel_calls=tf.data.AUTOTUNE)
+        ds = ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        return ds
 
     def fit(self,
             raw,
@@ -178,7 +199,7 @@ class MultiNet:
     ):
         
         inspect_data(raw)
-        
+        print("SHAPE {}".format(raw.shape))
         if self.seed is not None:
             np.random.seed(self.seed)
 
@@ -189,13 +210,16 @@ class MultiNet:
                 raw = raw.sample(cell_subset)
 
         gene_metric = (raw.var()/(1+raw.mean())).sort_values(ascending=False)
-        gene_metric = gene_metric[gene_metric > 0]
+        print("GENE_METRIC {}".format(gene_metric.shape))
+        # gene_metric = gene_metric[gene_metric > 0]
+        # print("GENE_METRIC (AFTER) {}".format(gene_metric.shape))
 
         if genes_to_impute is None:
             genes_to_impute = self.filter_genes(gene_metric, minVMR, NN_lim=NN_lim)
         else:
             # Make the number of genes to impute a multiple of the network output dim
             n_genes = len(genes_to_impute)
+            print("GENES TO IMPUTE {}".format(n_genes))
             if n_genes % self.sub_outputdim != 0:
                 print("The number of input genes is not a multiple of {}. Filling with other genes.".format(n_genes))
                 fill_genes = gene_metric.index[:self.sub_outputdim-n_genes]
@@ -205,16 +229,19 @@ class MultiNet:
                     rest = self.sub_outputdim - n_genes - len(fill_genes)
                     fill_genes = np.concatenate([fill_genes,
                                                  np.random.choice(gene_metric.index, rest, replace=True)])
-
+                print("FILL GENES {}".format(len(fill_genes)))
                 genes_to_impute = np.concatenate([genes_to_impute, fill_genes])
-
+                print("GENES TO IMPUTE {}".format(len(genes_to_impute)))
         covariance_matrix = get_distance_matrix(raw, n_pred=n_pred)
-
+        print("COV {}".format(covariance_matrix.shape))
         self.setTargets(raw.reindex(columns=genes_to_impute), mode=mode)
         self.setPredictors(covariance_matrix, ntop=ntop)
 
         print("Normalization")
         norm_data = np.log1p(raw).astype(np.float32) # normalizer.transform(raw)
+
+        del raw, covariance_matrix
+        gc.collect()
 
         np.random.seed(self.seed)
         tf.random.set_seed(self.seed)
@@ -228,14 +255,21 @@ class MultiNet:
         test_cells = np.random.choice(norm_data.index, int(0.05 * norm_data.shape[0]), replace=False)
         train_cells = np.setdiff1d(norm_data.index, test_cells)
 
-        X_train = [norm_data.loc[train_cells, inputgenes].values for inputgenes in self.predictors]
-        Y_train = [norm_data.loc[train_cells, targetgenes].values for targetgenes in self.targets]
+        train_ds = self.make_dataset(norm_data.loc[train_cells], self.predictors, self.targets,
+                        batch_size=self.NN_parameters['batch_size'])
+        # X_train = [norm_data.loc[train_cells, inputgenes].values for inputgenes in self.predictors]
+        # Y_train = [norm_data.loc[train_cells, targetgenes].values for targetgenes in self.targets]
         
         X_test = [norm_data.loc[test_cells, inputgenes].values for inputgenes in self.predictors]
         Y_test = [norm_data.loc[test_cells, targetgenes].values for targetgenes in self.targets]
 
         print("Fitting with {} cells".format(norm_data.shape[0]))
-        result = model.fit(X_train, Y_train,
+        del norm_data
+        gc.collect()
+
+        # result = model.fit(X_train, Y_train,
+        #                    validation_data=(X_test,Y_test),
+        result = model.fit(train_ds,
                            validation_data=(X_test,Y_test),
                            epochs=self.NN_parameters["max_epochs"],
                            batch_size=self.NN_parameters["batch_size"],
@@ -331,15 +365,18 @@ class MultiNet:
         return genes_to_impute
 
     def setTargets(self,data, mode='random'):
-        
+        print("MODE", mode)
+        print("setTARGETS data", data.shape)
+        print('SUBOUTPUT', self.sub_outputdim)
         n_subsets = int(data.shape[1]/self.sub_outputdim)
-
+        print("N_SUBSETS", n_subsets)
         if mode == 'progressive':
             self.targets = data.columns.values.reshape([n_subsets, self.sub_outputdim])
         else:
             self.targets = np.random.choice(data.columns,
                                             [n_subsets, self.sub_outputdim],
                                             replace=False)
+        print("TARGETS", len(self.targets))
         
     def setPredictors(self, covariance_matrix, ntop=5):
         self.predictors = []
@@ -347,12 +384,17 @@ class MultiNet:
         for i,targets in enumerate(self.targets):
 
             genes_not_in_target = np.setdiff1d(covariance_matrix.columns, targets)
-
+            # print(covariance_matrix.head())
             if genes_not_in_target.size == 0:
                 warnings.warn('Warning: number of target genes lower than output dim. Consider lowering down the sub_outputdim parameter',
                               UserWarning)
                 genes_not_in_target = covariance_matrix.columns
-            
+            # for target in targets:
+            #     if target not in covariance_matrix.index:
+            #         print(target, "NOT IN INDEX")
+            # for pred in genes_not_in_target:
+            #     if pred not in covariance_matrix.columns:
+            #         print(pred, "NOT IN COLUMNS")
             subMatrix = ( covariance_matrix
                           .loc[targets, genes_not_in_target]
                           )
